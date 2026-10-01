@@ -123,18 +123,26 @@ export class LLMService {
           recentChatHistory: conversationHistory.slice(-4).map(m => ({ role: m.role, content: m.content }))
         };
 
-        const response = await client().responses.parse({
+        const completion = await client().chat.completions.create({
           model: modelUsed,
-          store: false,
-          instructions: `${SYSTEM_INSTRUCTIONS}\nAnswer the support agent's question accurately regarding case ${caseId}. Provide a structured breakdown.`,
-          input: `<UNTRUSTED_CASE_DATA>\n${JSON.stringify(contextPayload)}\n</UNTRUSTED_CASE_DATA>\nAgent Question: ${question}`,
-          text: { format: zodTextFormat(structuredAIAnswerSchema, 'structured_answer') }
+          messages: [
+            {
+              role: 'system',
+              content: `${SYSTEM_INSTRUCTIONS}\nAnswer the support agent's question regarding case ${caseId}. Respond with structured JSON conforming to this schema:\n{"answer":"...","status":"SUPPORTED|PARTIALLY_SUPPORTED|CONFLICTING|INSUFFICIENT_EVIDENCE","confidence":0.95,"verifiedFacts":["..."],"customerClaims":["..."],"courierClaims":["..."],"conflicts":["..."],"missingInformation":["..."],"previousCommitments":["..."],"recommendedNextStep":"...","sources":["source-id-1"]}`
+            },
+            {
+              role: 'user',
+              content: `<UNTRUSTED_CASE_DATA>\n${JSON.stringify(contextPayload)}\n</UNTRUSTED_CASE_DATA>\nAgent Question: ${question}`
+            }
+          ],
+          response_format: { type: 'json_object' }
         });
 
-        if (response.output_parsed) {
-          structuredAnswer = structuredAIAnswerSchema.parse(response.output_parsed);
-          // Sanitize citations to strictly allowed source IDs
-          structuredAnswer.sources = structuredAnswer.sources.filter(id => allowedSourceIds.has(id));
+        const content = completion.choices[0]?.message?.content;
+        if (content) {
+          const parsed = JSON.parse(content);
+          structuredAnswer = structuredAIAnswerSchema.parse(parsed);
+          structuredAnswer.sources = (structuredAnswer.sources || []).filter(id => allowedSourceIds.has(id));
           if (structuredAnswer.sources.length === 0) {
             structuredAnswer.sources = [`ORDER-${caseId}`, `REF-${caseId}`];
           }
@@ -615,80 +623,86 @@ export class LLMService {
       : 'Under review by support team';
 
     let answer = `Your dispute for order ${caseId} (${order.item}) is currently under active review.`;
+    let nextStep = 'Our support specialists are reviewing delivery records and will follow up shortly.';
+    let status: 'SUPPORTED' | 'PARTIALLY_SUPPORTED' | 'CONFLICTING' | 'INSUFFICIENT_EVIDENCE' = 'SUPPORTED';
+    let isLiveSuccess = false;
 
     if (mode() === 'live' && (process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY)) {
       try {
-        const liveModel = process.env.OPENROUTER_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini';
+        const liveModel = process.env.OPENROUTER_MODEL || process.env.OPENAI_MODEL || 'openai/gpt-4o-mini';
         const completion = await client().chat.completions.create({
           model: liveModel,
           messages: [
             {
               role: 'system',
-              content: `You are ParcelProof Customer Assistant. Provide a customer-safe, evidence-grounded response.
+              content: `You are ParcelProof Customer Assistant. Provide a customer-safe, evidence-grounded response for the delivery dispute.
 Rules:
-1. Ground answers only in the case facts and retrieved evidence.
-2. NEVER reveal internal fraud scores, private notes, or internal risk policies.
-3. If the user asks about something outside delivery/disputes, state that it is out of scope.
-4. Reference source IDs in brackets (e.g. [ORDER-${caseId}], [REF-${caseId}]).`
+1. Ground answers strictly in the case facts and retrieved evidence. Answer dynamically and naturally to whatever the customer asks.
+2. NEVER mention internal fraud scores, private internal agent notes, or confidential risk rules.
+3. If the user asks about something outside delivery/disputes (e.g. weather, sports), state that it is out of scope.
+4. Reference source IDs in brackets (e.g. [ORDER-${caseId}], [REF-${caseId}], [SUP-...]).
+5. Clearly distinguish between customer claims, courier claims, and recorded financial ledger status.`
             },
             {
               role: 'user',
-              content: `Case: ${caseId} (${order.item}, ${order.currency} ${order.amount})
+              content: `Case ID: ${caseId} (${order.item}, ${order.currency} ${order.amount})
 Delivery Status: ${order.status}
-Financial Ledger Status: ${refund.status}
+Financial Ledger Status: ${refund.status} (Action Reference: ${refund.actionId || 'None'})
 Previous Commitments: ${JSON.stringify(comms)}
-Retrieved Case Evidence:
-${retrievedPassages.map(p => `[${p.source.id}]: ${p.passage}`).join('\n')}
+Retrieved Case Evidence & Customer/Courier Messages:
+${retrievedPassages.map(p => `[${p.source.id}] (${p.source.type}): ${p.passage}`).join('\n\n')}
 
 Customer Question: "${question}"`
             }
           ]
         });
         const liveText = completion.choices[0]?.message?.content;
-        if (liveText) {
-          answer = liveText;
+        if (liveText && liveText.trim().length > 0) {
+          answer = liveText.trim();
+          isLiveSuccess = true;
+          nextStep = 'Our support team is actively tracking this case and will notify you of any updates.';
         }
       } catch (err) {
-        // Fallback to deterministic grounded response
+        console.warn('OpenRouter/OpenAI customer assistant error:', err);
       }
     }
-    let nextStep = 'Our support specialists are reviewing delivery records and will follow up shortly.';
-    let status: 'SUPPORTED' | 'PARTIALLY_SUPPORTED' | 'CONFLICTING' | 'INSUFFICIENT_EVIDENCE' = 'SUPPORTED';
 
-    // 0. Out of scope
-    if (/weather|temperature|forecast|sports|football|movie/i.test(q)) {
-      answer = 'That information is outside the scope of this dispute assistant. I can help with your order delivery status, dispute investigation, evidence records, and refund status.';
-      nextStep = 'Ask a question regarding your delivery dispute.';
-      status = 'INSUFFICIENT_EVIDENCE';
-    } else if (/refund|money|status|paid|process/i.test(q)) {
-      if (refund.status === 'initiated') {
-        answer = `A simulated refund initiation has been recorded for your order (${order.currency} ${order.amount}) under action reference ${refund.actionId} [REF-${caseId}].`;
-        nextStep = 'No further action required on your end.';
-      } else if (comms.length > 0) {
-        answer = `We acknowledge that our team noted your refund request for order ${caseId} (${order.item}) [${comms[0].sourceId}]. The refund status is currently under review by our dispute team [REF-${caseId}].`;
-        nextStep = 'A support specialist is completing the policy review.';
+    if (!isLiveSuccess) {
+      // 0. Out of scope
+      if (/weather|temperature|forecast|sports|football|movie/i.test(q)) {
+        answer = 'That information is outside the scope of this dispute assistant. I can help with your order delivery status, dispute investigation, evidence records, and refund status.';
+        nextStep = 'Ask a question regarding your delivery dispute.';
+        status = 'INSUFFICIENT_EVIDENCE';
+      } else if (/refund|money|status|paid|process/i.test(q)) {
+        if (refund.status === 'initiated') {
+          answer = `A simulated refund initiation has been recorded for your order (${order.currency} ${order.amount}) under action reference ${refund.actionId} [REF-${caseId}].`;
+          nextStep = 'No further action required on your end.';
+        } else if (comms.length > 0) {
+          answer = `We acknowledge that our team noted your refund request for order ${caseId} (${order.item}) [${comms[0].sourceId}]. The refund status is currently under review by our dispute team [REF-${caseId}].`;
+          nextStep = 'A support specialist is completing the policy review.';
+        } else {
+          answer = `Your dispute regarding order ${caseId} (${order.item}) is being investigated. The refund status is currently under review in our ledger [REF-${caseId}].`;
+          nextStep = 'Our team is verifying delivery carrier details.';
+        }
+      } else if (/why|dispute|what happened|reception|photo|doorway/i.test(q)) {
+        answer = `You reported that order ${caseId} (${order.item}) was marked delivered but not received. We have documented your statements regarding the delivery location and photo mismatch.`;
+        nextStep = 'Our support team is validating the delivery scan against our dispute resolution guidelines.';
+        status = 'CONFLICTING';
+      } else if (/next|happen|what do i do|information/i.test(q)) {
+        answer = `You do not need to repeat your explanation. All your previously shared details and comments are safely documented in our system.`;
+        nextStep = 'Our team will notify you as soon as the review is complete.';
       } else {
-        answer = `Your dispute regarding order ${caseId} (${order.item}) is being investigated. The refund status is currently under review in our ledger [REF-${caseId}].`;
-        nextStep = 'Our team is verifying delivery carrier details.';
-      }
-    } else if (/why|dispute|what happened|reception|photo|doorway/i.test(q)) {
-      answer = `You reported that order ${caseId} (${order.item}) was marked delivered but not received. We have documented your statements regarding the delivery location and photo mismatch.`;
-      nextStep = 'Our support team is validating the delivery scan against our dispute resolution guidelines.';
-      status = 'CONFLICTING';
-    } else if (/next|happen|what do i do|information/i.test(q)) {
-      answer = `You do not need to repeat your explanation. All your previously shared details and comments are safely documented in our system.`;
-      nextStep = 'Our team will notify you as soon as the review is complete.';
-    } else {
-      // Dynamic search in retrieved passages for user query (e.g. "security desk", "what did I say", etc.)
-      const matchingPassage = retrievedPassages.find(p => {
-        const pText = p.passage.toLowerCase();
-        const words = q.split(/\s+/).filter(w => w.length > 3 && !['what', 'when', 'where', 'that', 'this', 'have', 'from', 'with', 'about', 'tell'].includes(w));
-        return words.some(w => pText.includes(w));
-      });
+        // Dynamic search in retrieved passages for user query (e.g. "security desk", "what did I say", etc.)
+        const matchingPassage = retrievedPassages.find(p => {
+          const pText = p.passage.toLowerCase();
+          const words = q.split(/\s+/).filter(w => w.length > 3 && !['what', 'when', 'where', 'that', 'this', 'have', 'from', 'with', 'about', 'tell'].includes(w));
+          return words.some(w => pText.includes(w));
+        });
 
-      if (matchingPassage) {
-        answer = `Regarding your question: Based on your recorded case history [${matchingPassage.source.id}], the record shows: "${matchingPassage.passage.trim()}".`;
-        nextStep = 'Our support team has this documented in your active dispute.';
+        if (matchingPassage) {
+          answer = `Regarding your question: Based on your recorded case history [${matchingPassage.source.id}], the record shows: "${matchingPassage.passage.trim()}".`;
+          nextStep = 'Our support team has this documented in your active dispute.';
+        }
       }
     }
 
