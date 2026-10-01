@@ -1,0 +1,22 @@
+services:
+  parcelproof:
+    build: .
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      AI_MODE: ${AI_MODE:-fixture}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      DEMO_NOW: ${DEMO_NOW:-2026-10-01T12:00:00.000Z}
+      PARCELPROOF_DB: /app/data/parcelproof.sqlite
+    volumes:
+      - parcelproof-data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/cases').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+volumes:
+  parcelproof-data:

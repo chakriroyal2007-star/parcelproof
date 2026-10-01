@@ -1,0 +1,41 @@
+{
+  "name": "parcelproof",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "node node_modules/next/dist/bin/next dev --hostname 127.0.0.1",
+    "build": "node node_modules/next/dist/bin/next build",
+    "start": "node node_modules/next/dist/bin/next start --hostname 127.0.0.1",
+    "seed": "node --import tsx --env-file-if-exists=.env.local scripts/seed.ts",
+    "ingest": "node --import tsx --env-file-if-exists=.env.local scripts/ingest.ts",
+    "test": "node scripts/test.mjs",
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test",
+    "reset": "node --import tsx --env-file-if-exists=.env.local scripts/reset.ts",
+    "setup": "node scripts/setup.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "evaluate:live": "node --import tsx --env-file-if-exists=.env.local scripts/evaluate-live.ts"
+  },
+  "dependencies": {
+    "next": "16.3.8",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "zod": "4.6.5",
+    "openai": "7.25.0",
+    "lucide-react": "1.49.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "typescript": "7.0.2",
+    "tsx": "4.23.15",
+    "tailwindcss": "4.3.3",
+    "@tailwindcss/postcss": "4.3.3",
+    "@playwright/test": "1.63.0"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "type": "module"
+}
