@@ -73,17 +73,7 @@ export default function CustomerPortal() {
       .then(r => r.json())
       .then(d => {
         if (!d.user || d.user.role !== 'CUSTOMER') {
-          // If not logged in as customer, default to Alex Morgan demo session
-          fetch('/api/auth/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: 'alex@example.com', password: 'password123' })
-          })
-            .then(r => r.json())
-            .then(authData => {
-              setUser(authData.user);
-              loadOrders();
-            });
+          router.push('/login');
         } else {
           setUser(d.user);
           loadOrders();

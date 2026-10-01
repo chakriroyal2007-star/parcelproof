@@ -39,17 +39,7 @@ export default function DeliveryAgentPortal() {
       .then(r => r.json())
       .then(d => {
         if (!d.user || d.user.role !== 'DELIVERY_AGENT') {
-          // Default to Daniel Kumar (Courier)
-          fetch('/api/auth/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: 'courier@parcelproof.com', password: 'password123' })
-          })
-            .then(r => r.json())
-            .then(authData => {
-              setUser(authData.user);
-              loadDeliveries();
-            });
+          router.push('/login');
         } else {
           setUser(d.user);
           loadDeliveries();

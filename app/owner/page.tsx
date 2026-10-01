@@ -58,17 +58,7 @@ export default function OwnerPortal() {
       .then(r => r.json())
       .then(d => {
         if (!d.user || (d.user.role !== 'OWNER' && d.user.role !== 'ADMIN')) {
-          // Default to Elena Vance (Owner) session
-          fetch('/api/auth/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: 'owner@parcelproof.com', password: 'password123' })
-          })
-            .then(r => r.json())
-            .then(authData => {
-              setUser(authData.user);
-              loadData();
-            });
+          router.push('/login');
         } else {
           setUser(d.user);
           loadData();
