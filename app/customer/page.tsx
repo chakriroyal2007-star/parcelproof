@@ -1,4 +1,5 @@
 'use client';
+import RoleSwitcher from '@/app/components/RoleSwitcher';
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
@@ -325,6 +326,7 @@ export default function CustomerPortal() {
         </div>
 
         <div suppressHydrationWarning className="portal-user">
+          <RoleSwitcher currentRole="CUSTOMER" currentName={user?.name || "Alex Morgan"} />
           <button className="button primary small" onClick={() => setIsPlacingOrder(true)}>
             <ShoppingBag size={14} /> Place New Order
           </button>

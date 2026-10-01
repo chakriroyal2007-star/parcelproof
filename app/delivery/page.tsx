@@ -1,4 +1,5 @@
 'use client';
+import RoleSwitcher from '@/app/components/RoleSwitcher';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
@@ -118,6 +119,7 @@ export default function DeliveryAgentPortal() {
         </div>
 
         <div suppressHydrationWarning className="portal-user">
+          <RoleSwitcher currentRole="DELIVERY_AGENT" currentName={user?.name || "Daniel Kumar"} />
           <div suppressHydrationWarning className="user-pill">
             <User size={16} className="text-accent" />
             <span>Delivery Agent: <strong>{user?.name || 'Daniel Kumar'}</strong></span>

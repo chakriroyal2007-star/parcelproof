@@ -1,4 +1,5 @@
 'use client';
+import RoleSwitcher from '@/app/components/RoleSwitcher';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
@@ -219,6 +220,7 @@ const [currentUser, setCurrentUser] = useState<User | null>(null);
           Parcel<span>Proof</span> <span className="brand-divider" /> <small>AI Dispute Copilot</small>
         </div>
         <div suppressHydrationWarning className="mast-right">
+          <RoleSwitcher currentRole="AGENT" currentName="Priya Shah" />
           <nav suppressHydrationWarning className="portal-quick-links" style={{ display: 'flex', gap: 'var(--s2)', alignItems: 'center', marginRight: 'var(--s2)' }}>
             <a href="/customer" className="button secondary" style={{ padding: '4px 10px', fontSize: 'var(--xs)', textDecoration: 'none' }}>Customer Portal</a>
             <a href="/owner" className="button secondary" style={{ padding: '4px 10px', fontSize: 'var(--xs)', textDecoration: 'none' }}>Owner Operations</a>

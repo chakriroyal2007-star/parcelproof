@@ -1,4 +1,5 @@
 'use client';
+import RoleSwitcher from '@/app/components/RoleSwitcher';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
@@ -211,6 +212,7 @@ export default function OwnerPortal() {
         </div>
 
         <div suppressHydrationWarning className="portal-user">
+          <RoleSwitcher currentRole="OWNER" currentName={user?.name || "Elena Vance"} />
           <div suppressHydrationWarning className="user-pill">
             <UserCheck size={16} className="text-accent" />
             <span>Operations Owner: <strong>{user?.name || 'Elena Vance'}</strong></span>
