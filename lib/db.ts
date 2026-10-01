@@ -20,13 +20,34 @@ import type {
 
 let connection: DatabaseSync | undefined;
 export const now = () => process.env.DEMO_NOW || FIXTURE_NOW;
-export const mode = (): 'fixture'|'live' => process.env.AI_MODE === 'live' ? 'live' : 'fixture';
+export const mode = (): 'fixture'|'live' => {
+  if (process.env.AI_MODE === 'fixture') return 'fixture';
+  if (process.env.AI_MODE === 'live') return 'live';
+  if (process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY) return 'live';
+  return 'fixture';
+};
+
+function getDbPath(): string {
+  if (process.env.PARCELPROOF_DB) return resolve(process.env.PARCELPROOF_DB);
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NODE_ENV === 'production') {
+    return '/tmp/parcelproof.sqlite';
+  }
+  return resolve('data/parcelproof.sqlite');
+}
 
 export function db() {
   if (connection) return connection;
-  const path = resolve(process.env.PARCELPROOF_DB || 'data/parcelproof.sqlite'); 
-  mkdirSync(dirname(path), { recursive: true });
-  connection = new DatabaseSync(path);
+  let path = getDbPath();
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    connection = new DatabaseSync(path);
+  } catch (err) {
+    path = '/tmp/parcelproof.sqlite';
+    try {
+      mkdirSync(dirname(path), { recursive: true });
+    } catch {}
+    connection = new DatabaseSync(path);
+  }
   connection.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
   CREATE TABLE IF NOT EXISTS orders(id TEXT PRIMARY KEY, accountId TEXT NOT NULL, data TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS sources(id TEXT PRIMARY KEY, accountId TEXT, orderId TEXT, type TEXT NOT NULL, data TEXT NOT NULL);
