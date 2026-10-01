@@ -795,6 +795,7 @@ Customer Question: "${question}"`
       status,
       orderId: caseId,
       citations: finalCitations,
+      sources: finalCitations,
       caseStatus: order.status,
       refundStatus: refundStatusText,
       nextStep,

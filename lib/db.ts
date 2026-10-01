@@ -15,7 +15,9 @@ import type {
   Commitment, 
   RiskSignal, 
   AIChatMessage, 
-  NextAgentBrief 
+  NextAgentBrief,
+  User,
+  UserRole
 } from './types';
 
 let connection: DatabaseSync | undefined;
@@ -49,6 +51,7 @@ export function db() {
     connection = new DatabaseSync(path);
   }
   connection.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
+  CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, email TEXT NOT NULL, name TEXT NOT NULL, role TEXT NOT NULL, accountId TEXT, agentId TEXT, passwordHash TEXT, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS orders(id TEXT PRIMARY KEY, accountId TEXT NOT NULL, data TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS sources(id TEXT PRIMARY KEY, accountId TEXT, orderId TEXT, type TEXT NOT NULL, data TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS refunds(orderId TEXT PRIMARY KEY REFERENCES orders(id), status TEXT NOT NULL, actionId TEXT, updatedAt TEXT NOT NULL);
@@ -78,6 +81,20 @@ export function db() {
 export function seed(c: DatabaseSync = db()) {
   c.exec('BEGIN IMMEDIATE');
   try {
+        // Seed default fixture users into users table
+    for (const u of USERS_FIXTURE) {
+      (c.prepare('INSERT OR IGNORE INTO users VALUES(?,?,?,?,?,?,?,?,?)') as any).run(
+        u.id,
+        u.email,
+        u.name,
+        u.role,
+        (u.accountId || null) as any,
+        u.agentId || null,
+        u.passwordHash,
+        '2026-10-01T10:00:00.000Z',
+        '2026-10-01T10:00:00.000Z'
+      );
+    }
     for (const o of orders) {
       c.prepare('INSERT OR IGNORE INTO orders VALUES(?,?,?)').run(o.id, o.accountId, JSON.stringify(o));
       c.prepare('INSERT OR IGNORE INTO refunds VALUES(?,?,?,?)').run(
@@ -654,7 +671,7 @@ export function createCustomerDispute(
       accountId,
       orderId: order.id,
       type: 'support',
-      title: `Customer Dispute Report: ${submission.category.replaceAll('_', ' ')}`,
+      title: `Customer Dispute Report: ${(submission.category || 'dispute').replaceAll('_', ' ')}`,
       timestamp: new Date().toISOString(),
       text: `Customer ${speaker}: [Dispute Category: ${submission.category}] ${submission.description}`,
       version: null,
@@ -922,7 +939,7 @@ export function placeCustomerOrder(input: {
 
     // Audit log
     c.prepare('INSERT INTO audits VALUES(?,?,?,?,?,?,?)').run(
-      `AUD-ORD-${Date.now()}`,
+      `AUD-ORD-${Date.now()}-${randomUUID().slice(0, 8)}`,
       order.id,
       input.customerName,
       'place_order',
@@ -967,7 +984,7 @@ export function assignDeliveryAgent(orderId: string, agentId: string, assignedBy
     );
 
     c.prepare('INSERT INTO audits VALUES(?,?,?,?,?,?,?)').run(
-      `AUD-ASSIGN-${Date.now()}`,
+      `AUD-ASSIGN-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       order.id,
       assignedBy,
       'assign_delivery_agent',
@@ -1060,7 +1077,7 @@ export function updateDeliveryStatus(
     }
 
     c.prepare('INSERT INTO audits VALUES(?,?,?,?,?,?,?)').run(
-      `AUD-STATUS-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      `AUD-STATUS-${Date.now()}-${Math.random().toString(36).slice(2, 6)}-${Math.random().toString(36).slice(2, 7)}`,
       order.id,
       agentName,
       `delivery_status_${status.toLowerCase()}`,
@@ -1423,4 +1440,151 @@ export function getTimeline(orderId: string): TimelineEvent[] {
   }
 
   return events.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+}
+
+
+export const USERS_FIXTURE: (User & { passwordHash: string })[] = [
+  {
+    id: 'USR-CUST-1042',
+    email: 'alex@example.com',
+    name: 'Alex Morgan',
+    role: 'CUSTOMER',
+    accountId: 'HH-208',
+    passwordHash: 'password123'
+  },
+  {
+    id: 'USR-CUST-1043',
+    email: 'sam@example.com',
+    name: 'Sam Rivera',
+    role: 'CUSTOMER',
+    accountId: 'HH-309',
+    passwordHash: 'password123'
+  },
+  {
+    id: 'USR-OWNER-01',
+    email: 'owner@parcelproof.com',
+    name: 'Elena Vance',
+    role: 'OWNER',
+    accountId: null,
+    passwordHash: 'password123'
+  },
+  {
+    id: 'USR-COURIER-01',
+    email: 'courier@parcelproof.com',
+    name: 'Daniel Kumar',
+    role: 'DELIVERY_AGENT',
+    accountId: null,
+    agentId: 'DEL-AGT-01',
+    passwordHash: 'password123'
+  },
+  {
+    id: 'USR-AGENT-01',
+    email: 'priya@parcelproof.com',
+    name: 'Priya Shah',
+    role: 'AGENT',
+    accountId: null,
+    passwordHash: 'password123'
+  },
+  {
+    id: 'USR-AGENT-02',
+    email: 'daniel@parcelproof.com',
+    name: 'Daniel Kim',
+    role: 'AGENT',
+    accountId: null,
+    passwordHash: 'password123'
+  },
+  {
+    id: 'USR-ADMIN-01',
+    email: 'admin@parcelproof.com',
+    name: 'Sarah Connor',
+    role: 'ADMIN',
+    accountId: null,
+    passwordHash: 'password123'
+  }
+];
+
+export function getOrCreateUserInDb(name: string, email: string, role: UserRole, passwordHash = 'password123'): User {
+  const c = db();
+  const normalizedEmail = email.toLowerCase().trim();
+  const existing = c.prepare('SELECT * FROM users WHERE email=? AND role=?').get(normalizedEmail, role) as any;
+  if (existing) {
+    return {
+      id: existing.id,
+      email: existing.email,
+      name: existing.name,
+      role: existing.role,
+      accountId: existing.accountId || null,
+      agentId: existing.agentId || null
+    };
+  }
+
+  const rolePrefix = role.substring(0, 4);
+  const randomSuffix = Math.random().toString(36).substring(2, 6);
+  const userId = 'USR-' + rolePrefix + '-' + Date.now() + '-' + randomSuffix;
+  let accountId: string | null = null;
+  let agentId: string | null = null;
+
+  if (role === 'CUSTOMER') {
+    accountId = 'HH-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+  } else if (role === 'DELIVERY_AGENT') {
+    agentId = 'DEL-AGENT-001';
+  }
+
+  const now = new Date().toISOString();
+  (c.prepare('INSERT INTO users VALUES(?,?,?,?,?,?,?,?,?)') as any).run(
+    userId,
+    normalizedEmail,
+    name.trim(),
+    role,
+    accountId,
+    agentId,
+    passwordHash,
+    now,
+    now
+  );
+
+  return {
+    id: userId,
+    email: normalizedEmail,
+    name: name.trim(),
+    role,
+    accountId,
+    agentId
+  };
+}
+
+export function getUserByEmailInDb(email: string): (User & { passwordHash?: string }) | null {
+  const c = db();
+  const normalizedEmail = email.toLowerCase().trim();
+  const row = c.prepare('SELECT * FROM users WHERE email=?').get(normalizedEmail) as any;
+  if (!row) {
+    const fixture = USERS_FIXTURE.find(u => u.email.toLowerCase() === normalizedEmail);
+    if (fixture) return fixture;
+    return null;
+  }
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    role: row.role,
+    accountId: row.accountId || null,
+    agentId: row.agentId || null,
+    passwordHash: row.passwordHash
+  };
+}
+
+export function listUsersInDb(): User[] {
+  const c = db();
+  const rows = c.prepare('SELECT id, email, name, role, accountId, agentId FROM users').all() as any[];
+  if (rows.length === 0) {
+    return USERS_FIXTURE.map(({ passwordHash, ...u }) => u);
+  }
+  return rows.map(r => ({
+    id: r.id,
+    email: r.email,
+    name: r.name,
+    role: r.role,
+    accountId: r.accountId || null,
+    agentId: r.agentId || null
+  }));
 }

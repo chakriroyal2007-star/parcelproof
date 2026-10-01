@@ -338,6 +338,7 @@ export type CustomerAIAnswer = {
   status?: AIResponseStatus;
   orderId?: string;
   citations?: string[];
+  sources?: string[];
   caseStatus: string;
   refundStatus: string;
   nextStep: string;

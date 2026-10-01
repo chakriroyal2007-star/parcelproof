@@ -1,18 +1,79 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Package, ShieldCheck, ArrowRight, Lock, User, AlertCircle, ShoppingBag, Briefcase, Truck, Headset, Shield } from 'lucide-react';
+import { 
+  Package, 
+  ShieldCheck, 
+  ArrowRight, 
+  Lock, 
+  User as UserIcon, 
+  AlertCircle, 
+  ShoppingBag, 
+  Briefcase, 
+  Truck, 
+  Shield, 
+  Sparkles,
+  CheckCircle2
+} from 'lucide-react';
+import type { UserRole } from '@/lib/types';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('owner@parcelproof.com');
-  const [password, setPassword] = useState('password123');
+  const [selectedRole, setSelectedRole] = useState<UserRole>('CUSTOMER');
+  const [name, setName] = useState('Alex Morgan');
+  const [email, setEmail] = useState('alex@example.com');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  async function handleLogin(e?: React.FormEvent, customEmail?: string) {
+  const demoPersonas = [
+    {
+      role: 'CUSTOMER' as UserRole,
+      name: 'Alex Morgan',
+      email: 'alex@example.com',
+      badge: 'Disputed Order PP-1042',
+      desc: 'Consumer portal to track orders, file disputes, and chat with AI assistant.'
+    },
+    {
+      role: 'OWNER' as UserRole,
+      name: 'Elena Vance',
+      email: 'owner@parcelproof.com',
+      badge: 'Operations Lead',
+      desc: 'Operations workspace to review cases, assign couriers, and approve refunds.'
+    },
+    {
+      role: 'DELIVERY_AGENT' as UserRole,
+      name: 'Daniel Kumar',
+      email: 'courier@parcelproof.com',
+      badge: 'Single Courier',
+      desc: 'Courier interface to view assignments, update delivery states, and upload proof.'
+    },
+    {
+      role: 'ADMIN' as UserRole,
+      name: 'Sarah Connor',
+      email: 'admin@parcelproof.com',
+      badge: 'System Audit',
+      desc: 'Audit and governance console with system metrics and RAG inspection.'
+    }
+  ];
+
+  function selectPersona(p: typeof demoPersonas[0]) {
+    setSelectedRole(p.role);
+    setName(p.name);
+    setEmail(p.email);
+    setError('');
+  }
+
+  async function handleLogin(e?: React.FormEvent) {
     if (e) e.preventDefault();
-    const loginEmail = customEmail || email;
+    if (!name.trim()) {
+      setError('Please enter your name.');
+      return;
+    }
+    if (!email.trim() || !email.includes('@')) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+
     setLoading(true);
     setError('');
 
@@ -20,7 +81,12 @@ export default function LoginPage() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: loginEmail, password })
+        body: JSON.stringify({ 
+          email: email.trim().toLowerCase(), 
+          name: name.trim(), 
+          role: selectedRole,
+          password: 'password123' 
+        })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Login failed');
@@ -43,113 +109,170 @@ export default function LoginPage() {
     }
   }
 
-  function quickLogin(demoEmail: string) {
-    setEmail(demoEmail);
-    handleLogin(undefined, demoEmail);
-  }
-
   return (
-    <div suppressHydrationWarning className="login-shell">
-      <div suppressHydrationWarning className="login-card" style={{ maxWidth: 640 }}>
-        <div suppressHydrationWarning className="login-header">
-          <div suppressHydrationWarning className="brand" style={{ justifyContent: 'center', marginBottom: 'var(--s3)' }}>
-            <span className="brand-icon"><Package size={26} /></span>
-            Parcel<span>Proof</span>
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-center items-center p-4 selection:bg-indigo-500/30">
+      <div className="w-full max-w-xl">
+        {/* Brand Header */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-medium mb-3">
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>ParcelProof Unified Identity & Authentication</span>
           </div>
-          <h2>Delivery Lifecycle & Dispute Intelligence</h2>
-          <p style={{ color: 'var(--text-dim)' }}>
-            Delivered is a status. Proof is a story. End-to-end evidence reconciliation, deterministic refund scoring, and human-in-the-loop decisions.
+          <h1 className="text-3xl font-bold tracking-tight text-white flex items-center justify-center gap-2">
+            <Package className="w-8 h-8 text-indigo-400" />
+            <span>Parcel<span className="text-indigo-400">Proof</span></span>
+          </h1>
+          <p className="text-slate-400 text-sm mt-1">
+            Delivered is a status. Proof is a story.
           </p>
         </div>
 
-        {error && (
-          <div suppressHydrationWarning className="message error" role="alert" style={{ margin: 'var(--s3) 0' }}>
-            <AlertCircle size={16} /> {error}
-          </div>
-        )}
-
-        <form suppressHydrationWarning onSubmit={handleLogin} className="login-form">
-          <div suppressHydrationWarning className="form-group">
-            <label htmlFor="email">Work Email / Customer Account</label>
-            <div suppressHydrationWarning className="input-with-icon">
-              <User size={16} />
-              <input
-                id="email"
-                type="email"
-                required
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="name@company.com"
-              />
+        {/* Main Card */}
+        <div className="bg-slate-900/80 backdrop-blur border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl shadow-black/50">
+          <form onSubmit={handleLogin} className="space-y-6">
+            {/* Role Selection */}
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">
+                1. Select Operating Role
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                {[
+                  { role: 'CUSTOMER' as UserRole, label: 'Customer', icon: ShoppingBag },
+                  { role: 'OWNER' as UserRole, label: 'Owner', icon: Briefcase },
+                  { role: 'DELIVERY_AGENT' as UserRole, label: 'Courier', icon: Truck },
+                  { role: 'ADMIN' as UserRole, label: 'Admin', icon: Shield }
+                ].map(item => {
+                  const Icon = item.icon;
+                  const active = selectedRole === item.role;
+                  return (
+                    <button
+                      key={item.role}
+                      type="button"
+                      onClick={() => {
+                        setSelectedRole(item.role);
+                        const match = demoPersonas.find(p => p.role === item.role);
+                        if (match && name === '') {
+                          setName(match.name);
+                          setEmail(match.email);
+                        }
+                      }}
+                      className={`flex flex-col items-center justify-center p-3 rounded-xl border text-center transition-all ${
+                        active 
+                          ? 'bg-indigo-600/20 border-indigo-500 text-white shadow-md shadow-indigo-500/10 ring-1 ring-indigo-500/50' 
+                          : 'bg-slate-800/50 border-slate-700/60 text-slate-400 hover:text-slate-200 hover:bg-slate-800 hover:border-slate-600'
+                      }`}
+                    >
+                      <Icon className={`w-5 h-5 mb-1.5 ${active ? 'text-indigo-400' : 'text-slate-400'}`} />
+                      <span className="text-xs font-medium">{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
 
-          <div suppressHydrationWarning className="form-group">
-            <label htmlFor="password">Password</label>
-            <div suppressHydrationWarning className="input-with-icon">
-              <Lock size={16} />
-              <input
-                id="password"
-                type="password"
-                required
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="••••••••"
-              />
+            {/* User Details */}
+            <div className="space-y-4 pt-1">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                  2. Your Full Name
+                </label>
+                <div className="relative">
+                  <UserIcon className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    required
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    placeholder="e.g. Chakradhar"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                  3. Email / Gmail Address
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder="e.g. user@gmail.com"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                  />
+                </div>
+              </div>
             </div>
-          </div>
 
-          <button type="submit" className="button primary full" disabled={loading}>
-            {loading ? 'Authenticating…' : 'Sign in to ParcelProof'} <ArrowRight size={16} />
-          </button>
-        </form>
-
-        <div suppressHydrationWarning className="demo-accounts-box" style={{ marginTop: 'var(--s4)', padding: 'var(--s4)', background: 'var(--surface-sunken)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
-          <span className="demo-title" style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-bright)', display: 'block', marginBottom: 'var(--s3)' }}>
-            ⚡ Nimbus Hackathon 1-Click Role Logins:
-          </span>
-          <div suppressHydrationWarning className="demo-buttons-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--s2)' }}>
-            <button type="button" onClick={() => quickLogin('owner@parcelproof.com')} className="demo-btn" style={{ textAlign: 'left', padding: 'var(--s3)', borderRadius: 'var(--r-sm)', background: 'var(--surface-card)', border: '1px solid var(--border)', cursor: 'pointer' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--brand-teal)' }}>
-                <Briefcase size={14} /> <strong>Owner / Operations</strong>
+            {error && (
+              <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{error}</span>
               </div>
-              <small style={{ color: 'var(--text-dim)', display: 'block', marginTop: 2 }}>Elena Vance (Assign & Review)</small>
-            </button>
+            )}
 
-            <button type="button" onClick={() => quickLogin('alex@example.com')} className="demo-btn" style={{ textAlign: 'left', padding: 'var(--s3)', borderRadius: 'var(--r-sm)', background: 'var(--surface-card)', border: '1px solid var(--border)', cursor: 'pointer' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--brand-orange)' }}>
-                <ShoppingBag size={14} /> <strong>Customer Portal</strong>
-              </div>
-              <small style={{ color: 'var(--text-dim)', display: 'block', marginTop: 2 }}>Alex Morgan (Place & Dispute)</small>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white font-medium py-3 px-4 rounded-xl text-sm flex items-center justify-center gap-2 transition shadow-lg shadow-indigo-600/20 disabled:opacity-50"
+            >
+              {loading ? (
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>
+                  <span>Enter ParcelProof as {selectedRole.replace('_', ' ')}</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
+          </form>
 
-            <button type="button" onClick={() => quickLogin('courier@parcelproof.com')} className="demo-btn" style={{ textAlign: 'left', padding: 'var(--s3)', borderRadius: 'var(--r-sm)', background: 'var(--surface-card)', border: '1px solid var(--border)', cursor: 'pointer' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#3b82f6' }}>
-                <Truck size={14} /> <strong>Delivery Agent</strong>
-              </div>
-              <small style={{ color: 'var(--text-dim)', display: 'block', marginTop: 2 }}>Daniel Kumar (Proof & Dropoff)</small>
-            </button>
-
-            <button type="button" onClick={() => quickLogin('priya@parcelproof.com')} className="demo-btn" style={{ textAlign: 'left', padding: 'var(--s3)', borderRadius: 'var(--r-sm)', background: 'var(--surface-card)', border: '1px solid var(--border)', cursor: 'pointer' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#a855f7' }}>
-                <Headset size={14} /> <strong>Support Copilot</strong>
-              </div>
-              <small style={{ color: 'var(--text-dim)', display: 'block', marginTop: 2 }}>Priya Shah (Live RAG Copilot)</small>
-            </button>
-
-            <button type="button" onClick={() => quickLogin('admin@parcelproof.com')} className="demo-btn" style={{ textAlign: 'left', padding: 'var(--s3)', borderRadius: 'var(--r-sm)', background: 'var(--surface-card)', border: '1px solid var(--border)', cursor: 'pointer' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#22c55e' }}>
-                <Shield size={14} /> <strong>Admin Console</strong>
-              </div>
-              <small style={{ color: 'var(--text-dim)', display: 'block', marginTop: 2 }}>Sarah Connor (System Audit)</small>
-            </button>
+          {/* Quick Demo Personas */}
+          <div className="mt-8 pt-6 border-t border-slate-800/80">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                Quick-Fill Seeded Demo Personas
+              </span>
+              <span className="text-[11px] text-slate-500">1-click select</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {demoPersonas.map((p) => (
+                <button
+                  key={p.email}
+                  type="button"
+                  onClick={() => selectPersona(p)}
+                  className={`p-2.5 rounded-xl text-left border transition flex items-start justify-between group ${
+                    email === p.email 
+                      ? 'bg-indigo-500/15 border-indigo-500/40 text-white' 
+                      : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 text-slate-300'
+                  }`}
+                >
+                  <div>
+                    <div className="text-xs font-semibold flex items-center gap-1.5">
+                      {p.name}
+                      <span className="text-[10px] font-normal px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
+                        {p.role.replace('_', ' ')}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-400 truncate max-w-[160px]">{p.email}</div>
+                  </div>
+                  {email === p.email && (
+                    <CheckCircle2 className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                  )}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
-        <div suppressHydrationWarning className="login-footer" style={{ marginTop: 'var(--s4)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, color: 'var(--text-dim)', fontSize: '0.8rem' }}>
-          <ShieldCheck size={14} />
-          <span>Multi-Role Access Control · SQLite Database · Grounded RAG + LLM</span>
-        </div>
+        {/* Footer */}
+        <p className="text-center text-xs text-slate-400 mt-6">
+          Evidence-Grounded Dispute Intelligence Platform · Nimbus Hackathon
+        </p>
       </div>
     </div>
   );

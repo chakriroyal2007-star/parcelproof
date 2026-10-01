@@ -6,13 +6,15 @@ export const dynamic = 'force-dynamic';
 
 const loginSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(1)
+  password: z.string().optional().default('password123'),
+  name: z.string().optional(),
+  role: z.enum(['CUSTOMER', 'OWNER', 'DELIVERY_AGENT', 'AGENT', 'ADMIN']).optional()
 });
 
 export async function POST(req: Request) {
   try {
     const body = loginSchema.parse(await req.json());
-    const user = authenticateUser(body.email, body.password);
+    const user = authenticateUser(body.email, body.password, body.name, body.role);
     if (!user) {
       return Response.json({ error: 'Invalid email or password' }, { status: 401 });
     }
