@@ -676,7 +676,6 @@ export class LLMService {
     
     // Dynamic RAG retrieval scoped to this case
     const retrievedPassages = await retrieve(order, question);
-    const citations = [`ORDER-${caseId}`, `REF-${caseId}`, ...retrievedPassages.map(p => p.source.id)];
 
     const refundStatusText = refund.status === 'initiated' 
       ? 'Refund initiation recorded in ledger' 
@@ -766,6 +765,15 @@ Customer Question: "${question}"`
       }
     }
 
+    // Extract ONLY the exact sources cited in the response text or top-ranking relevant passage
+    const citedInText = (answer.match(/\[([A-Z0-9_-]+)\]/g) || []).map(s => s.slice(1, -1));
+    const validSourceIds = new Set([`ORDER-${caseId}`, `REF-${caseId}`, ...retrievedPassages.map(p => p.source.id)]);
+    const exactCitations = citedInText.filter(id => validSourceIds.has(id));
+
+    const finalCitations = exactCitations.length > 0 
+      ? Array.from(new Set(exactCitations))
+      : (retrievedPassages.length > 0 ? Array.from(new Set([`ORDER-${caseId}`, retrievedPassages[0].source.id])) : [`ORDER-${caseId}`]);
+
     // Persist to conversation history
     addAIChatMessage(caseId, {
       id: randomUUID(),
@@ -778,7 +786,7 @@ Customer Question: "${question}"`
       role: 'assistant',
       content: answer,
       timestamp: new Date().toISOString(),
-      sources: citations
+      sources: finalCitations
     });
 
     return {
@@ -786,7 +794,7 @@ Customer Question: "${question}"`
       summary: answer,
       status,
       orderId: caseId,
-      citations,
+      citations: finalCitations,
       caseStatus: order.status,
       refundStatus: refundStatusText,
       nextStep,

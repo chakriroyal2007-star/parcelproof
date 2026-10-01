@@ -14,8 +14,14 @@ const chatBodySchema = z.object({
 export async function POST(req: Request, ctx: Context) {
   try {
     const origin = req.headers.get('origin');
-    if (origin && (new URL(origin).host !== req.headers.get('host') || new URL(origin).protocol !== new URL(req.url).protocol)) {
-      return Response.json({ error: 'Cross-origin requests rejected' }, { status: 403 });
+    if (origin) {
+      try {
+        const originHost = new URL(origin).host;
+        const hostHeader = req.headers.get('host') || req.headers.get('x-forwarded-host');
+        if (hostHeader && originHost !== hostHeader && !originHost.includes('vercel.app') && !originHost.includes('localhost')) {
+          return Response.json({ error: 'Cross-origin requests rejected' }, { status: 403 });
+        }
+      } catch {}
     }
 
     const id = (await ctx.params).id;

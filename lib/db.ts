@@ -678,9 +678,9 @@ export function createCustomerDispute(
   }
 }
 
-export function addCustomerMessage(orderId: string, speaker: string, message: string): Source {
+export function addCustomerMessage(orderId: string, speaker: string, message: string, photoUrl?: string | null): Source {
   const order = getOrder(orderId);
-  const sourceId = `SUP-${orderId}-MSG-${Date.now().toString().slice(-4)}`;
+  const sourceId = `SUP-${orderId}-MSG-${Date.now().toString().slice(-4)}-${Math.random().toString(36).slice(2, 5)}`;
   const sourceData: Source = {
     id: sourceId,
     accountId: order.accountId,
@@ -688,12 +688,12 @@ export function addCustomerMessage(orderId: string, speaker: string, message: st
     type: 'support',
     title: `Customer update from ${speaker}`,
     timestamp: new Date().toISOString(),
-    text: `Customer ${speaker}: ${message}`,
+    text: `Customer ${speaker}: "${message}"`,
     version: null,
     effectiveFrom: null,
     effectiveTo: null,
     region: order.region,
-    photo: null
+    photo: photoUrl || null
   };
 
   db().prepare('INSERT INTO sources VALUES(?,?,?,?,?)').run(
@@ -703,6 +703,35 @@ export function addCustomerMessage(orderId: string, speaker: string, message: st
     'support',
     JSON.stringify(sourceData)
   );
+
+  // Auto-index into RAG chunks
+  try {
+    const { indexSource } = require('./retrieval');
+    indexSource(sourceData);
+  } catch {}
+
+  // If customer or agent mentions a promise / replacement / refund with deadline, extract commitment
+  const matchPromise = message.match(/(?:promise|promised|will issue|will initiate|guarantee)\s+(?:a\s+)?(refund|replacement)/i);
+  if (matchPromise) {
+    const matchHours = message.match(/(\d+)\s*(?:hours|hrs|days)/i);
+    const deadlineHours = matchHours ? parseInt(matchHours[1], 10) : 24;
+    const deadlineDate = new Date(Date.now() + deadlineHours * 3600000).toISOString();
+
+    const existingComms = getCommitments(orderId);
+    existingComms.push({
+      id: `COMM-${orderId}-${Date.now()}`,
+      caseId: orderId,
+      sourceId,
+      promisedBy: speaker,
+      type: matchPromise[1].toLowerCase().includes('replace') ? 'ESCALATION' : 'REFUND',
+      statement: message,
+      promisedAt: new Date().toISOString(),
+      deadline: deadlineDate,
+      status: 'PROMISED',
+      verified: true
+    });
+    saveCommitments(orderId, existingComms);
+  }
 
   // Invalidate stale memory to incorporate new message
   db().prepare('DELETE FROM case_memories WHERE orderId=?').run(orderId);

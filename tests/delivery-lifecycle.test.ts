@@ -14,6 +14,7 @@ import {
   addCustomerMessage
 } from '../lib/db';
 import { authenticateUser, authorizeCaseAccess } from '../lib/auth';
+import { answerCustomerQuestion } from '../lib/llm-service';
 import type { User } from '../lib/types';
 
 test('LIFECYCLE 1: Product catalog and delivery agents are available and typed', () => {
@@ -167,4 +168,37 @@ test('LIFECYCLE 8: Role Authentication & Access isolation for OWNER and DELIVERY
   // Owner can access all cases
   assert.equal(authorizeCaseAccess(owner, 'PP-1042'), true);
   assert.equal(authorizeCaseAccess(owner, 'PP-1043'), true);
+});
+
+test('LIFECYCLE 9: Runtime Dynamic Memory & Commitment Learning', async () => {
+  const order = placeCustomerOrder({
+    productId: 'PROD-WH-001',
+    customerId: 'USR-CUST-1042',
+    customerName: 'Alex Morgan',
+    accountId: 'HH-208',
+    deliveryAddress: '742 Evergreen Terrace, Springfield',
+    quantity: 1
+  });
+
+  // Step 1: Customer submits statement about building security
+  addCustomerMessage(order.id, 'Alex Morgan', 'I already checked with building security and they confirmed the parcel never arrived.');
+
+  // Step 2: Customer submits statement with a promise
+  addCustomerMessage(order.id, 'Alex Morgan', 'I spoke with support today and they promised a refund within 48 hours.');
+
+  const alexUser: User = {
+    id: 'USR-CUST-1042',
+    email: 'alex@example.com',
+    name: 'Alex Morgan',
+    role: 'CUSTOMER',
+    accountId: 'HH-208'
+  };
+
+  // Test dynamic retrieval of building security statement
+  const answer1 = await answerCustomerQuestion(order.id, 'What did I learn from building security?', alexUser);
+  assert.ok(answer1.answer.toLowerCase().includes('security') || answer1.answer.toLowerCase().includes('building'), 'Must retrieve building security statement');
+
+  // Test dynamic retrieval of runtime commitment
+  const answer2 = await answerCustomerQuestion(order.id, 'What did the previous agent promise?', alexUser);
+  assert.ok(answer2.answer.toLowerCase().includes('refund') || answer2.answer.toLowerCase().includes('48 hours'), 'Must retrieve newly learned runtime promise');
 });
