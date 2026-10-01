@@ -21,7 +21,8 @@ import {
   saveNextAgentBrief, 
   logAIAudit, 
   getAnalysis,
-  getAudits
+  getAudits,
+  getAdminOverview
 } from './db';
 import { retrieve, client } from './retrieval';
 import { analyze as runEngineAnalyze } from './engine';
@@ -594,6 +595,65 @@ export class LLMService {
 
     saveNextAgentBrief(caseId, brief);
     return brief;
+  }
+
+  /**
+   * Extract and persist case memory
+   */
+  static async extractMemory(caseId: string): Promise<CaseMemory | null> {
+    return getCaseMemory(caseId);
+  }
+
+  /**
+   * Extract commitments from case communication
+   */
+  static async extractCommitments(caseId: string): Promise<Commitment[]> {
+    return getCommitments(caseId);
+  }
+
+  /**
+   * Reconcile case evidence
+   */
+  static async reconcileEvidence(caseId: string): Promise<Analysis> {
+    return runEngineAnalyze(caseId);
+  }
+
+  /**
+   * Generate shift handoff brief
+   */
+  static async generateHandoff(caseId: string, agent: string): Promise<NextAgentBrief> {
+    return LLMService.generateHandoffBrief(caseId, agent);
+  }
+
+  /**
+   * Operational & Administrative Q&A for Admin Console
+   */
+  static async answerAdminQuestion(question: string): Promise<{ answer: string; metrics: any }> {
+    const overview = getAdminOverview();
+    let answer = `System status overview: ${overview.totalOrders} total cases, ${overview.activeDisputes} active disputes, ${overview.overdueCommitments} overdue commitments, and ${overview.evidenceConflicts} unresolved evidence conflicts.`;
+    
+    if (mode() === 'live' && (process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY)) {
+      try {
+        const liveModel = process.env.OPENROUTER_MODEL || process.env.OPENAI_MODEL || 'openai/gpt-4o-mini';
+        const completion = await client().chat.completions.create({
+          model: liveModel,
+          messages: [
+            {
+              role: 'system',
+              content: 'You are ParcelProof Operations Intelligence Assistant. Provide accurate, operational analysis based on database metrics.'
+            },
+            {
+              role: 'user',
+              content: `Database Metrics: ${JSON.stringify(overview)}\nAdmin Question: "${question}"`
+            }
+          ]
+        });
+        const content = completion.choices[0]?.message?.content;
+        if (content) answer = content.trim();
+      } catch {}
+    }
+
+    return { answer, metrics: overview };
   }
 
   /**
