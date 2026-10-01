@@ -220,8 +220,10 @@ const [currentUser, setCurrentUser] = useState<User | null>(null);
         </div>
         <div suppressHydrationWarning className="mast-right">
           <nav suppressHydrationWarning className="portal-quick-links" style={{ display: 'flex', gap: 'var(--s2)', alignItems: 'center', marginRight: 'var(--s2)' }}>
-            <a href="/customer" className="button secondary" style={{ padding: '4px 10px', fontSize: 'var(--xs)', textDecoration: 'none' }}>Customer Hub</a>
-            <a href="/agent" className="button secondary" style={{ padding: '4px 10px', fontSize: 'var(--xs)', textDecoration: 'none' }}>Agent Workspace</a>
+            <a href="/customer" className="button secondary" style={{ padding: '4px 10px', fontSize: 'var(--xs)', textDecoration: 'none' }}>Customer Portal</a>
+            <a href="/owner" className="button secondary" style={{ padding: '4px 10px', fontSize: 'var(--xs)', textDecoration: 'none' }}>Owner Operations</a>
+            <a href="/delivery" className="button secondary" style={{ padding: '4px 10px', fontSize: 'var(--xs)', textDecoration: 'none' }}>Courier Terminal</a>
+            <a href="/agent" className="button secondary" style={{ padding: '4px 10px', fontSize: 'var(--xs)', textDecoration: 'none' }}>Support Copilot</a>
             <a href="/admin" className="button secondary" style={{ padding: '4px 10px', fontSize: 'var(--xs)', textDecoration: 'none' }}>Admin Console</a>
             <a href="/login" className="button primary" style={{ padding: '4px 10px', fontSize: 'var(--xs)', textDecoration: 'none' }}>Sign In</a>
           </nav>

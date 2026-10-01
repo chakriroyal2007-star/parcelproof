@@ -20,6 +20,23 @@ export const USERS: (User & { passwordHash: string })[] = [
     passwordHash: 'password123'
   },
   {
+    id: 'USR-OWNER-01',
+    email: 'owner@parcelproof.com',
+    name: 'Elena Vance',
+    role: 'OWNER',
+    accountId: null,
+    passwordHash: 'password123'
+  },
+  {
+    id: 'USR-COURIER-01',
+    email: 'courier@parcelproof.com',
+    name: 'Daniel Kumar',
+    role: 'DELIVERY_AGENT',
+    accountId: null,
+    agentId: 'DEL-AGT-01',
+    passwordHash: 'password123'
+  },
+  {
     id: 'USR-AGENT-01',
     email: 'priya@parcelproof.com',
     name: 'Priya Shah',
@@ -68,7 +85,8 @@ export function decodeSession(token: string): User | null {
       email: parsed.email,
       name: parsed.name,
       role: parsed.role,
-      accountId: parsed.accountId ?? null
+      accountId: parsed.accountId ?? null,
+      agentId: parsed.agentId ?? null
     };
   } catch {
     return null;
@@ -83,11 +101,19 @@ export async function getCurrentUser(): Promise<User | null> {
 }
 
 export function authorizeCaseAccess(user: User, orderId: string): boolean {
-  if (user.role === 'ADMIN' || user.role === 'AGENT') return true;
+  if (user.role === 'ADMIN' || user.role === 'OWNER' || user.role === 'AGENT') return true;
   if (user.role === 'CUSTOMER') {
     try {
       const order = getOrder(orderId);
       return order.accountId === user.accountId;
+    } catch {
+      return false;
+    }
+  }
+  if (user.role === 'DELIVERY_AGENT') {
+    try {
+      const order = getOrder(orderId);
+      return !order.deliveryAgentId || order.deliveryAgentId === user.agentId || order.deliveryAgentName === user.name;
     } catch {
       return false;
     }

@@ -1,8 +1,94 @@
 import { z } from 'zod';
-export type Source = { id: string; accountId: string | null; orderId: string | null; type: string; title: string; timestamp: string; text: string; version: string | null; effectiveFrom: string | null; effectiveTo: string | null; region: string | null; photo: string | null };
-export type Order = { id: string; accountId: string; label: string; item: string; amount: number; currency: string; speaker: string; recipient: string; verified: boolean; region: string; deliveredAt: string | null; status: string };
-export type Refund = { orderId: string; status: 'not_initiated' | 'initiated'; actionId: string | null; updatedAt: string };
-export type Audit = { id: string; orderId: string; agent: string; kind: string; at: string; detail: string; key: string };
+
+export type Source = { 
+  id: string; 
+  accountId: string | null; 
+  orderId: string | null; 
+  type: string; 
+  title: string; 
+  timestamp: string; 
+  text: string; 
+  version: string | null; 
+  effectiveFrom: string | null; 
+  effectiveTo: string | null; 
+  region: string | null; 
+  photo: string | null 
+};
+
+export type DeliveryStatus = 
+  | 'READY_FOR_ASSIGNMENT' 
+  | 'ASSIGNED' 
+  | 'PICKED_UP' 
+  | 'OUT_FOR_DELIVERY' 
+  | 'DELIVERY_ATTEMPTED' 
+  | 'DELIVERED' 
+  | 'FAILED' 
+  | 'DISPUTED' 
+  | 'DELIVERY_CONFIRMED';
+
+export type DeliveryProof = {
+  photoUrl: string | null;
+  timestamp: string;
+  note: string;
+  location?: string | null;
+  deliveryMethod?: string;
+  verified?: boolean;
+};
+
+export type Product = {
+  id: string;
+  name: string;
+  price: number;
+  currency: string;
+  category: string;
+  description: string;
+  image?: string;
+  inStock: boolean;
+};
+
+export type Order = { 
+  id: string; 
+  accountId: string; 
+  label: string; 
+  item: string; 
+  amount: number; 
+  currency: string; 
+  speaker: string; 
+  recipient: string; 
+  verified: boolean; 
+  region: string; 
+  deliveredAt: string | null; 
+  status: string;
+  // Extended lifecycle fields
+  productId?: string;
+  customerId?: string;
+  deliveryAddress?: string;
+  quantity?: number;
+  deliveryStatus?: DeliveryStatus;
+  deliveryAgentId?: string | null;
+  deliveryAgentName?: string | null;
+  deliveryProof?: DeliveryProof | null;
+  assignedAt?: string | null;
+  createdAt?: string;
+};
+
+export type Refund = { 
+  orderId: string; 
+  status: 'not_initiated' | 'initiated'; 
+  actionId: string | null; 
+  updatedAt: string 
+};
+
+export type Audit = { 
+  id: string; 
+  orderId: string; 
+  agent: string; 
+  kind: string; 
+  at: string; 
+  detail: string; 
+  key: string 
+};
+
 const refs = z.array(z.string()).min(1);
 export const statementSchema = z.object({ text: z.string(), sourceIds: refs });
 export const extractionSchema = z.object({
@@ -137,6 +223,75 @@ export type NextAgentBrief = {
   sourceIds: string[];
 };
 
+export type RefundAssessmentFactors = {
+  customerEvidence: number;       // 0-20
+  deliveryConsistency: number;    // 0-20
+  courierConsistency: number;     // 0-15
+  commitments: number;            // 0-15
+  financialHistory: number;       // 0-10
+  timelineConsistency: number;    // 0-10
+  policyEligibility: number;      // 0-10
+  total: number;                  // 0-100
+  explanations: Record<string, string>;
+};
+
+export type RefundAssessment = {
+  assessmentId: string;
+  caseId: string;
+  orderId: string;
+  score: number; // 0-100
+  level: 'INSUFFICIENT' | 'MIXED' | 'STRONG' | 'VERY_STRONG';
+  levelLabel: string;
+  factors: RefundAssessmentFactors;
+  evidenceFor: string[];
+  evidenceAgainst: string[];
+  conflicts: string[];
+  missingEvidence: string[];
+  recommendation: string;
+  uncertainty: string[];
+  calculatedAt: string;
+  version: string;
+  sources: string[];
+};
+
+export type OwnerDecisionType = 'APPROVE_REFUND' | 'REJECT_REFUND' | 'REQUEST_MORE_EVIDENCE' | 'ESCALATE';
+
+export type OwnerDecision = {
+  decisionId: string;
+  caseId: string;
+  orderId: string;
+  decision: OwnerDecisionType;
+  reason: string;
+  requiredEvidence?: string | null;
+  ownerName: string;
+  timestamp: string;
+  scoreSnapshot: number;
+  status: 'COMPLETED' | 'PENDING_INFO' | 'ESCALATED' | 'REJECTED';
+};
+
+export type TimelineEvent = {
+  id: string;
+  timestamp: string;
+  stage: string;
+  actor: string;
+  actorRole: string;
+  description: string;
+  sourceId?: string | null;
+  badgeType?: 'success' | 'warning' | 'neutral' | 'error';
+  photoUrl?: string | null;
+};
+
+export type DeliveryAgent = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  status: 'Available' | 'On delivery' | 'Offline';
+  activeDeliveries: number;
+  completedDeliveries: number;
+  disputedDeliveries: number;
+};
+
 export type CaseData = { 
   order: Order; 
   refund: Refund; 
@@ -150,13 +305,16 @@ export type CaseData = {
   commitments?: Commitment[];
   riskSignals?: RiskSignal[];
   chatHistory?: AIChatMessage[];
+  assessment?: RefundAssessment | null;
+  ownerDecision?: OwnerDecision | null;
+  timeline?: TimelineEvent[];
   draft: string; 
   activeAgent: string; 
   mode: 'fixture'|'live'; 
   now: string;
 };
 
-export type UserRole = 'CUSTOMER' | 'AGENT' | 'ADMIN';
+export type UserRole = 'CUSTOMER' | 'OWNER' | 'DELIVERY_AGENT' | 'AGENT' | 'ADMIN';
 
 export type User = {
   id: string;
@@ -164,6 +322,7 @@ export type User = {
   name: string;
   role: UserRole;
   accountId?: string | null;
+  agentId?: string | null;
 };
 
 export type CustomerDisputeSubmission = {
@@ -186,5 +345,3 @@ export type CustomerAIAnswer = {
   conflicts?: string[];
   missingInformation?: string[];
 };
-
-

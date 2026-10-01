@@ -16,12 +16,17 @@ import {
   PlusCircle, 
   Truck, 
   CheckCircle2, 
-  X,
-  FileText,
-  LockKeyhole,
-  Sparkles
+  X, 
+  FileText, 
+  LockKeyhole, 
+  Sparkles,
+  ShoppingBag,
+  MapPin,
+  Camera,
+  CheckCircle
 } from 'lucide-react';
-import type { Order, User, CustomerAIAnswer, AIChatMessage, Source } from '@/lib/types';
+import type { Order, User, CustomerAIAnswer, AIChatMessage, Source, Product } from '@/lib/types';
+import { PRODUCTS } from '@/lib/products';
 
 export default function CustomerPortal() {
   const router = useRouter();
@@ -31,12 +36,21 @@ export default function CustomerPortal() {
   const [tab, setTab] = useState<'overview' | 'orders' | 'disputes' | 'assistant' | 'profile'>('overview');
   const [selectedCase, setSelectedCase] = useState<string | null>('PP-1042');
   
-  // Dispute creation state
+  // Place Order state
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product>(PRODUCTS[0]);
+  const [deliveryAddress, setDeliveryAddress] = useState('404 Skyline Ave, Apt 12B, Seattle, WA');
+  const [placingOrder, setPlacingOrder] = useState(false);
+
+  // Dispute creation state (Adaptive AI Refund Intake)
   const [isCreatingDispute, setIsCreatingDispute] = useState(false);
   const [disputeCategory, setDisputeCategory] = useState<'not_received' | 'wrong_location' | 'incorrect_photo' | 'damaged' | 'other'>('not_received');
-  const [disputeDescription, setDisputeDescription] = useState('');
+  const [disputeDescription, setDisputeDescription] = useState('I was home all day and my apartment building has no reception desk. The doorway in the photo does not match mine.');
   const [disputeOrderId, setDisputeOrderId] = useState('PP-1042');
   const [submittingDispute, setSubmittingDispute] = useState(false);
+  const [intakeStep, setIntakeStep] = useState(1);
+  const [checkedNeighbors, setCheckedNeighbors] = useState('yes');
+  const [photoDisputed, setPhotoDisputed] = useState('yes');
   const [notice, setNotice] = useState('');
 
   // Customer AI Assistant state
@@ -124,6 +138,51 @@ export default function CustomerPortal() {
     router.push('/login');
   }
 
+  async function handlePlaceOrder(e: React.FormEvent) {
+    e.preventDefault();
+    setPlacingOrder(true);
+    setNotice('');
+    try {
+      const res = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productId: selectedProduct.id,
+          quantity: 1,
+          deliveryAddress,
+          customerName: user?.name || 'Alex Morgan'
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to place order');
+      setNotice(`Order ${data.order.id} placed successfully! Product: ${selectedProduct.name} (${selectedProduct.id})`);
+      setIsPlacingOrder(false);
+      loadOrders();
+      setTab('orders');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Error placing order');
+    } finally {
+      setPlacingOrder(false);
+    }
+  }
+
+  async function handleConfirmDelivery(orderId: string) {
+    try {
+      await fetch(`/api/deliveries/${orderId}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: 'DELIVERY_CONFIRMED',
+          note: 'Customer confirmed package received.'
+        })
+      });
+      setNotice(`Thank you! Delivery confirmed for order ${orderId}.`);
+      loadOrders();
+    } catch {
+      alert('Error confirming delivery');
+    }
+  }
+
   async function handleCreateDispute(e: React.FormEvent) {
     e.preventDefault();
     if (!disputeDescription.trim()) return;
@@ -136,14 +195,14 @@ export default function CustomerPortal() {
         body: JSON.stringify({
           orderId: disputeOrderId,
           category: disputeCategory,
-          description: disputeDescription
+          description: `[Location check: ${checkedNeighbors === 'yes' ? 'Checked residence' : 'Unchecked'}, Photo verified: ${photoDisputed === 'yes' ? 'Disputed mismatch' : 'Matching'}] ${disputeDescription}`
         })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to submit dispute');
-      setNotice('Your dispute has been logged and assigned to our resolution team.');
+      setNotice('Your dispute and evidence have been logged and assigned to operations review.');
       setIsCreatingDispute(false);
-      setDisputeDescription('');
+      setIntakeStep(1);
       loadOrders();
       setTab('disputes');
     } catch (err) {
@@ -249,7 +308,7 @@ export default function CustomerPortal() {
   }
 
   const selectedOrder = orders.find(o => o.id === selectedCase) || orders[0];
-  const disputedOrders = orders.filter(o => o.status.includes('disputed') || o.status.includes('unconfirmed'));
+  const disputedOrders = orders.filter(o => o.status.includes('disputed') || o.id === 'PP-1042' || o.id === 'PP-1044');
 
   return (
     <div suppressHydrationWarning className="portal-shell">
@@ -266,6 +325,9 @@ export default function CustomerPortal() {
         </div>
 
         <div suppressHydrationWarning className="portal-user">
+          <button className="button primary small" onClick={() => setIsPlacingOrder(true)}>
+            <ShoppingBag size={14} /> Place New Order
+          </button>
           <div suppressHydrationWarning className="user-pill">
             <ShieldCheck size={16} className="text-accent" />
             <span>Welcome, <strong>{user?.name || 'Customer'}</strong></span>
@@ -283,7 +345,7 @@ export default function CustomerPortal() {
           Overview
         </button>
         <button className={`portal-nav-btn ${tab === 'orders' ? 'active' : ''}`} onClick={() => setTab('orders')}>
-          My Orders
+          My Orders ({orders.length})
         </button>
         <button className={`portal-nav-btn ${tab === 'disputes' ? 'active' : ''}`} onClick={() => setTab('disputes')}>
           Active Disputes {disputedOrders.length > 0 && <span className="tab-count">{disputedOrders.length}</span>}
@@ -317,43 +379,38 @@ export default function CustomerPortal() {
                 <section suppressHydrationWarning className="portal-card">
                   <div suppressHydrationWarning className="section-title">
                     <div>
-                      <h2>Recent Package Disputes</h2>
-                      <p>Track delivery investigations, carrier evidence, and refund commitments.</p>
+                      <h2>Recent Orders & Delivery Status</h2>
+                      <p>Track delivery dispatch, courier evidence, and refund investigations.</p>
                     </div>
-                    <button className="button primary small" onClick={() => { setIsCreatingDispute(true); setDisputeOrderId(orders[0]?.id || 'PP-1042'); }}>
-                      <PlusCircle size={15} /> Report New Issue
+                    <button className="button primary small" onClick={() => setIsPlacingOrder(true)}>
+                      <PlusCircle size={15} /> Buy New Product
                     </button>
                   </div>
 
-                  {disputedOrders.length === 0 ? (
-                    <div suppressHydrationWarning className="empty-state">
-                      <Package size={32} />
-                      <p>No active delivery disputes found on your account.</p>
-                    </div>
-                  ) : (
-                    <div suppressHydrationWarning className="orders-list">
-                      {disputedOrders.map(order => (
-                        <article
-                          key={order.id}
-                          className={`order-card ${selectedCase === order.id ? 'active' : ''}`}
-                          onClick={() => { setSelectedCase(order.id); setTab('disputes'); }}
-                        >
-                          <div suppressHydrationWarning className="order-meta">
-                            <span className="order-id">{order.id}</span>
-                            <span className="order-date">{order.deliveredAt ? new Date(order.deliveredAt).toLocaleDateString() : 'Pending'}</span>
-                          </div>
-                          <div suppressHydrationWarning className="order-details">
-                            <h3>{order.item}</h3>
-                            <span className="order-amount">{order.currency} {order.amount.toFixed(2)}</span>
-                          </div>
-                          <div suppressHydrationWarning className="order-status-line">
-                            <span className="badge warning">Investigation in progress</span>
-                            <span className="link-arrow">View details <ArrowRight size={13} /></span>
-                          </div>
-                        </article>
-                      ))}
-                    </div>
-                  )}
+                  <div suppressHydrationWarning className="orders-list">
+                    {orders.map(order => (
+                      <article
+                        key={order.id}
+                        className={`order-card ${selectedCase === order.id ? 'active' : ''}`}
+                        onClick={() => { setSelectedCase(order.id); setTab('orders'); }}
+                      >
+                        <div suppressHydrationWarning className="order-meta">
+                          <span className="order-id">{order.id}</span>
+                          <span className="badge neutral">{order.productId || 'PROD-WH-001'}</span>
+                        </div>
+                        <div suppressHydrationWarning className="order-details">
+                          <h3>{order.item}</h3>
+                          <span className="order-amount">{order.currency} {order.amount.toFixed(2)}</span>
+                        </div>
+                        <div suppressHydrationWarning className="order-status-line">
+                          <span className={`badge ${order.status.includes('disputed') ? 'warning' : (order.status.includes('Delivered') ? 'success' : 'neutral')}`}>
+                            {order.status}
+                          </span>
+                          <span className="link-arrow">Track order <ArrowRight size={13} /></span>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
                 </section>
               </div>
 
@@ -363,7 +420,7 @@ export default function CustomerPortal() {
                   <div suppressHydrationWarning className="section-title">
                     <div>
                       <h3>Dispute AI Assistant</h3>
-                      <p>Ask anything about your package delivery status.</p>
+                      <p>Live evidence-grounded dispute support.</p>
                     </div>
                     <Bot size={20} className="text-accent" />
                   </div>
@@ -392,44 +449,57 @@ export default function CustomerPortal() {
             <section suppressHydrationWarning className="portal-card">
               <div suppressHydrationWarning className="section-title">
                 <div>
-                  <h2>Your Order History</h2>
-                  <p>All purchases and delivery tracking records.</p>
+                  <h2>Your Order History & Delivery Tracking</h2>
+                  <p>All active purchases, courier milestones, and delivery confirmation.</p>
                 </div>
+                <button className="button primary small" onClick={() => setIsPlacingOrder(true)}>
+                  <PlusCircle size={15} /> Place Order
+                </button>
               </div>
               <div suppressHydrationWarning className="orders-table-wrapper">
                 <table className="portal-table">
                   <thead>
                     <tr>
                       <th>Order ID</th>
+                      <th>Product ID</th>
                       <th>Item Description</th>
+                      <th>Delivery Courier</th>
                       <th>Amount</th>
-                      <th>Delivery Date</th>
-                      <th>Status</th>
-                      <th>Action</th>
+                      <th>Delivery Status</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {orders.map(o => (
                       <tr key={o.id}>
                         <td><strong>{o.id}</strong></td>
+                        <td><span className="badge neutral">{o.productId || 'PROD-WH-001'}</span></td>
                         <td>{o.item}</td>
+                        <td>{o.deliveryAgentName || <span style={{ color: 'var(--text-muted)' }}>Assigned at hub</span>}</td>
                         <td>{o.currency} {o.amount.toFixed(2)}</td>
-                        <td>{o.deliveredAt ? new Date(o.deliveredAt).toLocaleDateString() : 'In transit'}</td>
                         <td>
-                          <span className={`badge ${o.status.includes('disputed') ? 'warning' : 'neutral'}`}>
+                          <span className={`badge ${o.status.includes('disputed') ? 'warning' : (o.status.includes('Delivered') ? 'success' : 'neutral')}`}>
                             {o.status}
                           </span>
                         </td>
                         <td>
-                          {o.status.includes('disputed') ? (
-                            <button className="button secondary small" onClick={() => { setSelectedCase(o.id); setTab('disputes'); }}>
-                              Inspect Dispute
-                            </button>
-                          ) : (
-                            <button className="button secondary small" onClick={() => { setDisputeOrderId(o.id); setIsCreatingDispute(true); }}>
-                              Report Issue
-                            </button>
-                          )}
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            {o.status.includes('Delivered') && !o.status.includes('disputed') && (
+                              <>
+                                <button className="button secondary small" onClick={() => handleConfirmDelivery(o.id)}>
+                                  <CheckCircle size={12} /> Confirm
+                                </button>
+                                <button className="button primary small" onClick={() => { setDisputeOrderId(o.id); setIsCreatingDispute(true); }}>
+                                  Dispute
+                                </button>
+                              </>
+                            )}
+                            {o.status.includes('disputed') && (
+                              <button className="button secondary small" onClick={() => { setSelectedCase(o.id); setTab('disputes'); }}>
+                                View Dispute
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -650,6 +720,143 @@ export default function CustomerPortal() {
         </main>
       )}
 
+      {/* PLACE ORDER MODAL */}
+      {isPlacingOrder && (
+        <div suppressHydrationWarning className="modal-backdrop" onClick={() => setIsPlacingOrder(false)}>
+          <div suppressHydrationWarning className="modal-card" onClick={e => e.stopPropagation()}>
+            <div suppressHydrationWarning className="modal-header">
+              <div>
+                <span className="eyebrow"><ShoppingBag size={12} /> E-Commerce Store Checkout</span>
+                <h3>Place a Verified Product Order</h3>
+              </div>
+              <button className="icon-button" onClick={() => setIsPlacingOrder(false)}>
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handlePlaceOrder}>
+              <div suppressHydrationWarning className="form-group">
+                <label>Select Product from Catalog</label>
+                <select
+                  className="portal-select"
+                  value={selectedProduct.id}
+                  onChange={e => {
+                    const prod = PRODUCTS.find(p => p.id === e.target.value) || PRODUCTS[0];
+                    setSelectedProduct(prod);
+                  }}
+                >
+                  {PRODUCTS.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} — ${p.price.toFixed(2)} ({p.id})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div suppressHydrationWarning style={{ background: 'var(--bg-elevated)', padding: 'var(--s3)', borderRadius: 'var(--rds-radius-md)', marginBottom: 'var(--s3)' }}>
+                <strong>Product ID: {selectedProduct.id}</strong><br />
+                <span style={{ fontSize: 'var(--xs)', color: 'var(--text-muted)' }}>{selectedProduct.description}</span><br />
+                <span style={{ fontSize: 'var(--sm)', fontWeight: 700, color: 'var(--accent)' }}>Total: ${selectedProduct.price.toFixed(2)}</span>
+              </div>
+
+              <div suppressHydrationWarning className="form-group">
+                <label>Delivery Address</label>
+                <div suppressHydrationWarning className="input-with-icon">
+                  <MapPin size={16} />
+                  <input
+                    type="text"
+                    required
+                    value={deliveryAddress}
+                    onChange={e => setDeliveryAddress(e.target.value)}
+                    placeholder="Street address, Apt/Suite, City, State"
+                  />
+                </div>
+              </div>
+
+              <div suppressHydrationWarning className="modal-actions">
+                <button type="button" className="button secondary" onClick={() => setIsPlacingOrder(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="button primary" disabled={placingOrder}>
+                  {placingOrder ? 'Placing Order…' : `Confirm Order ($${selectedProduct.price.toFixed(2)})`}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ADAPTIVE AI REFUND INTAKE & DISPUTE MODAL */}
+      {isCreatingDispute && (
+        <div suppressHydrationWarning className="modal-backdrop" onClick={() => setIsCreatingDispute(false)}>
+          <div suppressHydrationWarning className="modal-card" onClick={e => e.stopPropagation()}>
+            <div suppressHydrationWarning className="modal-header">
+              <div>
+                <span className="eyebrow"><Bot size={12} /> Adaptive AI Dispute Intake</span>
+                <h3>Report Delivery Problem · {disputeOrderId}</h3>
+              </div>
+              <button className="icon-button" onClick={() => setIsCreatingDispute(false)}>
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleCreateDispute}>
+              {intakeStep === 1 && (
+                <>
+                  <div suppressHydrationWarning className="form-group">
+                    <label>What happened with your package?</label>
+                    <select
+                      value={disputeCategory}
+                      onChange={e => setDisputeCategory(e.target.value as any)}
+                      className="portal-select"
+                    >
+                      <option value="not_received">Package marked delivered but not received</option>
+                      <option value="wrong_location">Wrong location (Building has no reception/doorway mismatch)</option>
+                      <option value="incorrect_photo">Delivery photo does not match my entrance</option>
+                      <option value="damaged">Package arrived damaged</option>
+                    </select>
+                  </div>
+
+                  <div suppressHydrationWarning className="form-group">
+                    <label>Did you check with neighbors, building manager, or porch area?</label>
+                    <select value={checkedNeighbors} onChange={e => setCheckedNeighbors(e.target.value)} className="portal-select">
+                      <option value="yes">Yes, checked all surrounding areas — nothing was delivered</option>
+                      <option value="no">Not yet</option>
+                    </select>
+                  </div>
+
+                  <div suppressHydrationWarning className="form-group">
+                    <label>Does the courier photo match your doorway or building entrance?</label>
+                    <select value={photoDisputed} onChange={e => setPhotoDisputed(e.target.value)} className="portal-select">
+                      <option value="yes">No, the photo shows a different building / reception area</option>
+                      <option value="no">Yes, photo matches</option>
+                    </select>
+                  </div>
+
+                  <div suppressHydrationWarning className="form-group">
+                    <label>Explain the details in your own words:</label>
+                    <textarea
+                      rows={3}
+                      required
+                      value={disputeDescription}
+                      onChange={e => setDisputeDescription(e.target.value)}
+                      placeholder="e.g. I was home during the delivery window and my building has no reception desk..."
+                    />
+                  </div>
+
+                  <div suppressHydrationWarning className="modal-actions">
+                    <button type="button" className="button secondary" onClick={() => setIsCreatingDispute(false)}>
+                      Cancel
+                    </button>
+                    <button type="submit" className="button primary" disabled={submittingDispute}>
+                      {submittingDispute ? 'Logging dispute…' : 'Submit Dispute for Investigation'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* EVIDENCE CITATION MODAL */}
       {activeSource && (
         <div suppressHydrationWarning className="modal-backdrop" onClick={() => setActiveSource(null)}>
@@ -680,71 +887,6 @@ export default function CustomerPortal() {
             <pre className="source-text" style={{ background: 'var(--bg-elevated)', padding: 'var(--s4)', borderRadius: 'var(--rds-radius-md)', whiteSpace: 'pre-wrap', maxHeight: '260px', overflowY: 'auto' }}>
               {activeSource.text}
             </pre>
-          </div>
-        </div>
-      )}
-
-      {/* CREATE DISPUTE MODAL */}
-      {isCreatingDispute && (
-        <div suppressHydrationWarning className="modal-backdrop">
-          <div suppressHydrationWarning className="modal-card">
-            <div suppressHydrationWarning className="modal-header">
-              <h3>Report a Delivery Dispute</h3>
-              <button className="icon-button" onClick={() => setIsCreatingDispute(false)}>
-                <X size={18} />
-              </button>
-            </div>
-            <form onSubmit={handleCreateDispute}>
-              <div suppressHydrationWarning className="form-group">
-                <label>Select Order</label>
-                <select
-                  value={disputeOrderId}
-                  onChange={e => setDisputeOrderId(e.target.value)}
-                  className="portal-select"
-                >
-                  {orders.map(o => (
-                    <option key={o.id} value={o.id}>
-                      {o.id} — {o.item} ({o.currency} {o.amount})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div suppressHydrationWarning className="form-group">
-                <label>Issue Reason</label>
-                <select
-                  value={disputeCategory}
-                  onChange={e => setDisputeCategory(e.target.value as any)}
-                  className="portal-select"
-                >
-                  <option value="not_received">Didn't receive package (Marked delivered)</option>
-                  <option value="wrong_location">Wrong delivery location (Building has no reception)</option>
-                  <option value="incorrect_photo">Incorrect delivery photo</option>
-                  <option value="damaged">Damaged package</option>
-                  <option value="other">Other issue</option>
-                </select>
-              </div>
-
-              <div suppressHydrationWarning className="form-group">
-                <label>Describe what happened</label>
-                <textarea
-                  rows={4}
-                  required
-                  placeholder="Explain the situation (e.g. I was home all day, checked with neighbors, and the doorway in the photo does not match mine)..."
-                  value={disputeDescription}
-                  onChange={e => setDisputeDescription(e.target.value)}
-                />
-              </div>
-
-              <div suppressHydrationWarning className="modal-actions">
-                <button type="button" className="button secondary" onClick={() => setIsCreatingDispute(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="button primary" disabled={submittingDispute}>
-                  {submittingDispute ? 'Logging dispute…' : 'Submit Dispute'}
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}
