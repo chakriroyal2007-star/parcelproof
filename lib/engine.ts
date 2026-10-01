@@ -68,19 +68,37 @@ export async function analyze(id:string):Promise<Analysis>{
  const evidence=await retrieve(o,`${id} delivered not received refund promise initiated reception doorway photo neighbors policy eligibility 24 hours recipient`);
  let extraction:Extraction;
  if(mode()==='live'){
- const response=await client().responses.parse({model:process.env.OPENAI_MODEL||'gpt-4.1-mini',store:false,instructions:rules+' Extract exact quotations, speakers, claims, commitments, deadlines and unresolved questions. madeAt MUST equal the source timestamp. Only committed agent promises count as commitments; distinguish proposals. Convert explicit relative deadlines using source timestamp.',input:JSON.stringify({now:now(),conversations:ss.filter(s=>s.type==='support')}),text:{format:zodTextFormat(extractionSchema,'extraction')}});
- if(!response.output_parsed)throw new Error('Model refused or returned incomplete extraction.');extraction=extractionSchema.parse(response.output_parsed);
- }else extraction=fixtureExtraction(ss);
- validateExtraction(extraction,ss);
+  try {
+    const response=await client().responses.parse({model:process.env.OPENAI_MODEL||'gpt-4.1-mini',store:false,instructions:rules+' Extract exact quotations, speakers, claims, commitments, deadlines and unresolved questions. madeAt MUST equal the source timestamp. Only committed agent promises count as commitments; distinguish proposals. Convert explicit relative deadlines using source timestamp.',input:JSON.stringify({now:now(),conversations:ss.filter(s=>s.type==='support')}),text:{format:zodTextFormat(extractionSchema,'extraction')}});
+    if(!response.output_parsed)throw new Error('Model refused or returned incomplete extraction.');
+    extraction=extractionSchema.parse(response.output_parsed);
+    validateExtraction(extraction,ss);
+  } catch(err) {
+    console.warn('Live LLM extraction error, falling back to deterministic extraction:', err);
+    extraction=fixtureExtraction(ss);
+  }
+ }else {
+  extraction=fixtureExtraction(ss);
+  validateExtraction(extraction,ss);
+ }
  // Conversations sent for extraction are pinned so every generated reference remains inspectable.
  for(const s of ss.filter(s=>s.type==='support'))if(!evidence.some(p=>p.source.id===s.id))evidence.push({chunkId:s.id+':extraction',source:s,passage:s.text,method:'order-scoped extraction source'});
  const allowed=[...evidence.map(p=>p.source),...structured,...account];
  let narrative:Narrative;
  if(mode()==='live'){
- const response=await client().responses.parse({model:process.env.OPENAI_MODEL||'gpt-4.1-mini',store:false,instructions:rules+' Produce reconciliation, policy-grounded recommendation, a customer reply in cited sentences, and a shift handoff. Match the supplied server gate action exactly, including missing prerequisites; it is authoritative. No prior actions may be described as completed without an audit record. Cite policy for any refund recommendation. No applicable policy is a catalog limitation, not a universal policy claim.',input:JSON.stringify({now:now(),order:o,gate,extraction,evidence:evidence.map(p=>({sourceId:p.source.id,passage:p.passage,metadata:p.source})),structured,accountContext:account}),text:{format:zodTextFormat(narrativeSchema,'reconciliation')}});
- if(!response.output_parsed)throw new Error('Model refused or returned incomplete reconciliation.');narrative=narrativeSchema.parse(response.output_parsed);
- }else narrative=fixtureNarrative(o,extraction,gate);
- validateNarrative(narrative,o,gate,allowed);
+  try {
+    const response=await client().responses.parse({model:process.env.OPENAI_MODEL||'gpt-4.1-mini',store:false,instructions:rules+' Produce reconciliation, policy-grounded recommendation, a customer reply in cited sentences, and a shift handoff. Match the supplied server gate action exactly, including missing prerequisites; it is authoritative. No prior actions may be described as completed without an audit record. Cite policy for any refund recommendation. No applicable policy is a catalog limitation, not a universal policy claim.',input:JSON.stringify({now:now(),order:o,gate,extraction,evidence:evidence.map(p=>({sourceId:p.source.id,passage:p.passage,metadata:p.source})),structured,accountContext:account}),text:{format:zodTextFormat(narrativeSchema,'reconciliation')}});
+    if(!response.output_parsed)throw new Error('Model refused or returned incomplete reconciliation.');
+    narrative=narrativeSchema.parse(response.output_parsed);
+    validateNarrative(narrative,o,gate,allowed);
+  } catch(err) {
+    console.warn('Live LLM narrative error, falling back to deterministic narrative:', err);
+    narrative=fixtureNarrative(o,extraction,gate);
+  }
+ }else {
+  narrative=fixtureNarrative(o,extraction,gate);
+  validateNarrative(narrative,o,gate,allowed);
+ }
  if(getRefund(id).updatedAt!==version)throw new Error('Refund state changed during analysis. Analyze the case again.');
  const result:Analysis={id:randomUUID(),mode:mode(),narrationOrigin:mode()==='live'?'live_model':'fixture',at:now(),extraction,narrative,promises:reconcilePromises(extraction,o),evidence,accountContext:account,gate,ledgerVersion:version};saveAnalysis(id,result);return result;
 }

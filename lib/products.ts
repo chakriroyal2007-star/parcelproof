@@ -2,7 +2,7 @@ import type { Product, DeliveryAgent } from './types';
 
 export const PRODUCTS: Product[] = [
   {
-    id: 'PROD-WH-001',
+    id: 'PROD-HEADPHONES-001',
     name: 'Studio Wireless Headphones',
     price: 129.00,
     currency: 'USD',

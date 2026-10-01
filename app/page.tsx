@@ -314,7 +314,7 @@ const [currentUser, setCurrentUser] = useState<User | null>(null);
       {/* WORKSPACE VIEW */}
       {view === 'workspace' && (
         <div suppressHydrationWarning className="page-shell" style={{ padding: 0 }}>
-          <nav suppressHydrationWarning className="case-picker" aria-label="Demo cases" style={{ margin: 'var(--s4) var(--s8) var(--s6)' }}>
+          <nav suppressHydrationWarning className="case-picker" aria-label="Demo cases" >
             {orders.map((item, index) => (
               <button
                 disabled={!!busy || isChatting}
@@ -350,7 +350,7 @@ const [currentUser, setCurrentUser] = useState<User | null>(null);
             </div>
           ) : (
             <>
-              <header suppressHydrationWarning className="case-header" style={{ padding: '0 var(--s8) var(--s4)' }}>
+              <header suppressHydrationWarning className="case-header" >
                 <div suppressHydrationWarning className="case-title">
                   <span className="package-tile"><Package size={28} /></span>
                   <div>
@@ -372,7 +372,7 @@ const [currentUser, setCurrentUser] = useState<User | null>(null);
                 </div>
               </header>
 
-              <div suppressHydrationWarning className="context-grid" style={{ padding: 'var(--s2) var(--s8) var(--s5)' }}>
+              <div suppressHydrationWarning className="context-grid" >
                 <div>
                   <span>Current speaker</span>
                   <strong>{o!.speaker}</strong>
@@ -654,7 +654,7 @@ const [currentUser, setCurrentUser] = useState<User | null>(null);
                         </button>
                         {draft && (
                           <>
-                            <textarea id="draft" value={draft} onChange={e => setDraft(e.target.value)} rows={9} />
+                            <textarea id="draft" aria-label="Editable customer reply draft" value={draft} onChange={e => setDraft(e.target.value)} rows={9} />
                             <div suppressHydrationWarning className="draft-footer">
                               <small>Agent-editable · never sent automatically</small>
                               <button className="button secondary" disabled={!!busy} onClick={() => run('draft', { text: draft })}>
@@ -904,7 +904,7 @@ const [currentUser, setCurrentUser] = useState<User | null>(null);
       >
         <div suppressHydrationWarning className="dialog-heading">
           <span className="eyebrow">Original source · synthetic</span>
-          <button className="icon-button" onClick={() => dialog.current?.close()}><X size={21} /></button>
+          <button className="icon-button" aria-label="Close source" onClick={() => dialog.current?.close()}><X size={21} /></button>
         </div>
         {source && (
           <>

@@ -20,8 +20,8 @@ import type { User } from '../lib/types';
 test('LIFECYCLE 1: Product catalog and delivery agents are available and typed', () => {
   const products = listProducts();
   assert.ok(products.length >= 4, 'Must have at least 4 products');
-  const headphones = products.find(p => p.id === 'PROD-WH-001');
-  assert.ok(headphones, 'PROD-WH-001 must exist');
+  const headphones = products.find(p => p.id === 'PROD-HEADPHONES-001');
+  assert.ok(headphones, 'PROD-HEADPHONES-001 must exist');
   assert.equal(headphones.name, 'Studio Wireless Headphones');
   assert.equal(headphones.price, 129.00);
 
@@ -34,7 +34,7 @@ test('LIFECYCLE 1: Product catalog and delivery agents are available and typed',
 
 test('LIFECYCLE 2: Customer places order -> Generates real orderId and exact productId', () => {
   const order = placeCustomerOrder({
-    productId: 'PROD-WH-001',
+    productId: 'PROD-HEADPHONES-001',
     customerId: 'USR-CUST-1042',
     customerName: 'Alex Morgan',
     accountId: 'HH-208',
@@ -43,7 +43,7 @@ test('LIFECYCLE 2: Customer places order -> Generates real orderId and exact pro
   });
 
   assert.ok(order.id.startsWith('ORD-2026-'), 'Must generate ORD-2026- prefix');
-  assert.equal(order.productId, 'PROD-WH-001');
+  assert.equal(order.productId, 'PROD-HEADPHONES-001');
   assert.equal(order.speaker, 'Alex Morgan');
   assert.equal(order.deliveryStatus, 'READY_FOR_ASSIGNMENT');
 
@@ -52,7 +52,7 @@ test('LIFECYCLE 2: Customer places order -> Generates real orderId and exact pro
   assert.ok(caseObj, 'Case record must exist for order');
   assert.equal(caseObj.order.id, order.id);
   assert.equal(caseObj.order.item, 'Studio Wireless Headphones');
-  assert.equal(caseObj.order.productId, 'PROD-WH-001');
+  assert.equal(caseObj.order.productId, 'PROD-HEADPHONES-001');
 });
 
 test('LIFECYCLE 3: Owner assigns Delivery Agent -> Courier assigned to exact orderId', () => {
@@ -130,8 +130,17 @@ test('LIFECYCLE 5: Deterministic Refund Assessment score (0-100) with explainabl
 });
 
 test('LIFECYCLE 6: Owner decision recording: APPROVE records atomic refund and audit trail', () => {
+  const order = placeCustomerOrder({
+    productId: 'PROD-HEADPHONES-001',
+    customerId: 'USR-CUST-1042',
+    customerName: 'Alex Morgan',
+    accountId: 'HH-208',
+    deliveryAddress: '742 Evergreen Terrace, Springfield',
+    quantity: 1
+  });
+
   const decision = recordOwnerDecision(
-    'PP-1042',
+    order.id,
     'APPROVE_REFUND',
     'Evidence confirms delivery conflict with no reception on premises and overdue promise.',
     null,
@@ -140,10 +149,10 @@ test('LIFECYCLE 6: Owner decision recording: APPROVE records atomic refund and a
 
   assert.equal(decision.decision, 'APPROVE_REFUND');
   assert.equal(decision.ownerName, 'Elena Vance');
-  assert.equal(decision.caseId, 'PP-1042');
+  assert.equal(decision.caseId, order.id);
   assert.equal(decision.status, 'COMPLETED');
 
-  const updatedCase = getCase('PP-1042');
+  const updatedCase = getCase(order.id);
   assert.equal(updatedCase?.ownerDecision?.decision, 'APPROVE_REFUND');
   assert.equal(updatedCase?.order.status, 'Refund Approved');
 });
@@ -172,7 +181,7 @@ test('LIFECYCLE 8: Role Authentication & Access isolation for OWNER and DELIVERY
 
 test('LIFECYCLE 9: Runtime Dynamic Memory & Commitment Learning', async () => {
   const order = placeCustomerOrder({
-    productId: 'PROD-WH-001',
+    productId: 'PROD-HEADPHONES-001',
     customerId: 'USR-CUST-1042',
     customerName: 'Alex Morgan',
     accountId: 'HH-208',

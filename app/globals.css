@@ -833,3 +833,57 @@ button,a,input,textarea{font:inherit}button,a{touch-action:manipulation}button{c
   border-radius: 9999px !important;
   font-weight: 600 !important;
 }
+
+
+@media(max-width: 900px) {
+  .portal-quick-links { display: none !important; }
+  .portal-header { padding: 0 var(--s4) !important; }
+  .case-picker { margin: var(--s2) var(--s4) !important; }
+  .case-header, .context-grid { padding-left: var(--s4) !important; padding-right: var(--s4) !important; }
+  .portal-nav { padding: 0 var(--s4) !important; overflow-x: auto !important; }
+}
+
+
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+.portal-shell, .page-shell, .workspace, .portal-content {
+  max-width: 100vw;
+  box-sizing: border-box;
+}
+
+@media(max-width: 900px) {
+  .case-picker {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: var(--s2) !important;
+    margin: var(--s2) var(--s4) var(--s4) !important;
+  }
+  .case-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: var(--s3) !important;
+    padding: 0 var(--s4) var(--s4) !important;
+  }
+  .header-actions {
+    width: 100% !important;
+    display: flex !important;
+    gap: var(--s2) !important;
+  }
+  .header-actions button {
+    flex: 1 !important;
+  }
+  .context-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    padding: var(--s2) var(--s4) var(--s4) !important;
+  }
+  .portal-nav {
+    padding: 0 var(--s4) !important;
+  }
+  .workspace {
+    grid-template-columns: 1fr !important;
+    padding: 0 var(--s4) var(--s6) !important;
+  }
+}
