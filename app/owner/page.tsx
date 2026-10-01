@@ -22,7 +22,8 @@ import {
   UserCheck,
   FileCheck,
   Scale,
-  DollarSign
+  DollarSign,
+  Inbox
 } from 'lucide-react';
 import type { Order, DeliveryAgent, RefundAssessment, OwnerDecision, CaseData, User } from '@/lib/types';
 
@@ -32,7 +33,7 @@ export default function OwnerPortal() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [agents, setAgents] = useState<DeliveryAgent[]>([]);
   const [tab, setTab] = useState<'dashboard' | 'orders' | 'refund-reviews' | 'deliveries' | 'audit'>('dashboard');
-  const [selectedOrderId, setSelectedOrderId] = useState<string>('PP-1042');
+  const [selectedOrderId, setSelectedOrderId] = useState<string>('');
   const [caseData, setCaseData] = useState<CaseData | null>(null);
   const [assessment, setAssessment] = useState<RefundAssessment | null>(null);
   const [loading, setLoading] = useState(true);
@@ -41,7 +42,7 @@ export default function OwnerPortal() {
 
   // Assignment state
   const [assigningOrder, setAssigningOrder] = useState<Order | null>(null);
-  const [selectedAgentId, setSelectedAgentId] = useState<string>('DEL-AGT-01');
+  const [selectedAgentId, setSelectedAgentId] = useState<string>('');
 
   // Decision state
   const [decisionReason, setDecisionReason] = useState('');
@@ -70,6 +71,9 @@ export default function OwnerPortal() {
   useEffect(() => {
     if (selectedOrderId) {
       loadCaseDetails(selectedOrderId);
+    } else {
+      setCaseData(null);
+      setAssessment(null);
     }
   }, [selectedOrderId]);
 
@@ -78,34 +82,61 @@ export default function OwnerPortal() {
     Promise.all([
       fetch('/api/orders').then(r => r.json()),
       fetch('/api/agents/deliveries').then(r => r.json())
-    ])
-      .then(([ordersRes, agentsRes]) => {
-        setOrders(ordersRes.orders || []);
-        setAgents(agentsRes.agents || []);
-        if (ordersRes.orders && ordersRes.orders.length > 0) {
-          const firstDispute = ordersRes.orders.find((o: Order) => o.status.includes('disputed') || o.id === 'PP-1042') || ordersRes.orders[0];
-          setSelectedOrderId(firstDispute.id);
-        }
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    ]).then(([ordersRes, agentsRes]) => {
+      const orderList: Order[] = ordersRes.orders || [];
+      setOrders(orderList);
+      const agentList: DeliveryAgent[] = agentsRes.agents || [];
+      setAgents(agentList);
+      if (agentList.length > 0) {
+        setSelectedAgentId(agentList[0].id);
+      }
+      if (orderList.length > 0) {
+        setSelectedOrderId(prev => {
+          if (prev && orderList.some(o => o.id === prev)) return prev;
+          const disputed = orderList.find(o => o.status.includes('disputed'));
+          return disputed ? disputed.id : orderList[0].id;
+        });
+      } else {
+        setSelectedOrderId('');
+        setCaseData(null);
+        setAssessment(null);
+      }
+    }).catch(() => {
+      setNotice('Failed to load operational data');
+    }).finally(() => {
+      setLoading(false);
+    });
   }
 
   function loadCaseDetails(orderId: string) {
-    fetch(`/api/cases/${orderId}`)
-      .then(r => r.json())
-      .then(d => {
-        setCaseData(d);
-        if (d && d.assessment) {
-          setAssessment(d.assessment);
-        }
-      })
-      .catch(() => {});
+    if (!orderId) {
+      setCaseData(null);
+      setAssessment(null);
+      return;
+    }
+    Promise.all([
+      fetch(`/api/cases/${orderId}`).then(r => r.json()),
+      fetch(`/api/cases/${orderId}/assessment`).then(r => r.json())
+    ]).then(([caseRes, assessmentRes]) => {
+      if (caseRes && !caseRes.error) {
+        setCaseData(caseRes);
+      } else {
+        setCaseData(null);
+      }
+      if (assessmentRes && !assessmentRes.error) {
+        setAssessment(assessmentRes);
+      } else {
+        setAssessment(null);
+      }
+    }).catch(() => {
+      setCaseData(null);
+      setAssessment(null);
+    });
   }
 
   async function handleAssignAgent(e: React.FormEvent) {
     e.preventDefault();
-    if (!assigningOrder) return;
+    if (!assigningOrder || !selectedAgentId) return;
     setBusy(true);
     try {
       const res = await fetch(`/api/orders/${assigningOrder.id}/assign`, {
@@ -113,16 +144,16 @@ export default function OwnerPortal() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           deliveryAgentId: selectedAgentId,
-          assignedBy: user?.name || 'Elena Vance'
+          assignedBy: user?.name || 'Operations Lead'
         })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Assignment failed');
-      setNotice(`Order ${assigningOrder.id} successfully assigned to delivery agent.`);
+      setNotice(`Order ${assigningOrder.id} successfully assigned.`);
       setAssigningOrder(null);
       loadData();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Error assigning courier');
+      alert(err instanceof Error ? err.message : 'Failed to assign agent');
     } finally {
       setBusy(false);
     }
@@ -138,500 +169,419 @@ export default function OwnerPortal() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           decision: decisionModal,
-          reason: decisionReason || `Owner evaluated case evidence (Score: ${assessment?.score || 82}/100)`,
-          requiredEvidence: decisionModal === 'REQUEST_MORE_EVIDENCE' ? (requiredEvidence || 'Proof of residence / doorway photo') : null
+          reason: decisionReason,
+          requiredEvidence: decisionModal === 'REQUEST_MORE_EVIDENCE' ? requiredEvidence : undefined,
+          ownerName: user?.name || 'Operations Lead'
         })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to record decision');
-      setNotice(`Decision successfully recorded: ${decisionModal.replaceAll('_', ' ')}.`);
+      if (!res.ok) throw new Error(data.error || 'Failed to save decision');
+      setNotice(`Recorded decision: ${decisionModal.replaceAll('_', ' ')}`);
       setDecisionModal(null);
       setDecisionReason('');
       setRequiredEvidence('');
       loadData();
-      loadCaseDetails(selectedOrderId);
+      if (selectedOrderId) {
+        loadCaseDetails(selectedOrderId);
+      }
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Error processing decision');
+      alert(err instanceof Error ? err.message : 'Decision recording failed');
     } finally {
       setBusy(false);
     }
   }
 
-  async function askOwnerCopilot(qText?: string) {
-    const question = qText || copilotQuestion;
+  async function handleAskCopilot(e: React.FormEvent) {
+    e.preventDefault();
+    const question = copilotQuestion;
     if (!question.trim() || !selectedOrderId) return;
     setCopilotLoading(true);
     try {
       const res = await fetch(`/api/cases/${selectedOrderId}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: question.trim() })
+        body: JSON.stringify({ question })
       });
-      const data = await res.json();
-      setCopilotAnswer(data.answer?.answer || 'Case evidence and commitments evaluated.');
-      if (!qText) setCopilotQuestion('');
+      const d = await res.json();
+      if (d.answer) {
+        setCopilotAnswer(d.answer);
+      } else if (d.message) {
+        setCopilotAnswer(d.message);
+      } else {
+        setCopilotAnswer('Analysis completed based on case context.');
+      }
     } catch {
-      setCopilotAnswer('Copilot evaluated case records against operational policies.');
+      setCopilotAnswer('Copilot is temporarily unavailable.');
     } finally {
       setCopilotLoading(false);
     }
   }
 
-  async function handleLogout() {
-    await fetch('/api/auth/logout', { method: 'POST' });
-    router.push('/login');
-  }
-
-  const unassignedOrders = orders.filter(o => !o.deliveryAgentId || o.deliveryStatus === 'READY_FOR_ASSIGNMENT');
-  const activeDeliveries = orders.filter(o => o.deliveryStatus === 'OUT_FOR_DELIVERY' || o.deliveryStatus === 'ASSIGNED' || o.deliveryStatus === 'PICKED_UP');
-  const disputedOrders = orders.filter(o => o.status.includes('disputed') || o.id === 'PP-1042' || o.id === 'PP-1044');
-  const refundAwaitingOrders = orders.filter(o => o.status.includes('disputed') && (!caseData?.ownerDecision || caseData.ownerDecision.status === 'PENDING_INFO'));
+  const disputedOrders = orders.filter(o => o.status.includes('disputed'));
+  const activeSelectedOrder = orders.find(o => o.id === selectedOrderId) || (orders.length > 0 ? orders[0] : null);
 
   return (
-    <div suppressHydrationWarning className="portal-shell">
-      {/* HEADER */}
+    <div suppressHydrationWarning className="portal-container">
+      {/* TOP HEADER */}
       <header suppressHydrationWarning className="portal-header">
-        <div suppressHydrationWarning className="portal-brand">
-          <div suppressHydrationWarning className="brand-badge" style={{ background: 'var(--accent)' }}>
-            <Building size={20} color="#fff" />
+        <div suppressHydrationWarning className="header-left">
+          <div suppressHydrationWarning className="brand-logo">
+            <Package size={22} className="brand-icon" />
+            <span>Parcel<span className="brand-accent">Proof</span></span>
           </div>
-          <div suppressHydrationWarning>
-            <h1 style={{ fontSize: 'var(--lg)', margin: 0 }}>ParcelProof</h1>
-            <span style={{ fontSize: 'var(--xs)', color: 'var(--text-muted)' }}>Operations & Owner Decision Console</span>
-          </div>
+          <span className="badge warning">Operations Owner Workspace</span>
         </div>
 
-        <div suppressHydrationWarning className="portal-user">
-          <RoleSwitcher currentRole="OWNER" currentName={user?.name || "Elena Vance"} />
-          <div suppressHydrationWarning className="user-pill">
-            <UserCheck size={16} className="text-accent" />
-            <span>Operations Owner: <strong>{user?.name || 'Elena Vance'}</strong></span>
-            <span className="badge neutral">Role: OWNER</span>
-          </div>
-          <button onClick={handleLogout} className="button secondary small">
-            <LogOut size={14} /> Sign out
+        <div suppressHydrationWarning className="header-right">
+          <RoleSwitcher currentRole="OWNER" currentName={user?.name || 'Operations Lead'} />
+          <button 
+            className="button secondary small"
+            onClick={() => {
+              fetch('/api/auth/logout', { method: 'POST' }).then(() => router.push('/login'));
+            }}
+          >
+            <LogOut size={14} /> Exit
           </button>
         </div>
       </header>
 
-      {/* NAVIGATION */}
+      {/* NAVIGATION TABS */}
       <nav suppressHydrationWarning className="portal-nav">
-        <button className={`portal-nav-btn ${tab === 'dashboard' ? 'active' : ''}`} onClick={() => setTab('dashboard')}>
-          Dashboard
+        <button className={`nav-item ${tab === 'dashboard' ? 'active' : ''}`} onClick={() => setTab('dashboard')}>
+          <ClipboardList size={16} /> Operations Overview
         </button>
-        <button className={`portal-nav-btn ${tab === 'refund-reviews' ? 'active' : ''}`} onClick={() => setTab('refund-reviews')}>
-          <Scale size={14} style={{ color: 'var(--accent)' }} /> Refund Reviews {refundAwaitingOrders.length > 0 && <span className="tab-count">{refundAwaitingOrders.length}</span>}
+        <button className={`nav-item ${tab === 'orders' ? 'active' : ''}`} onClick={() => setTab('orders')}>
+          <Package size={16} /> All Orders ({orders.length})
         </button>
-        <button className={`portal-nav-btn ${tab === 'orders' ? 'active' : ''}`} onClick={() => setTab('orders')}>
-          Orders & Assignments {unassignedOrders.length > 0 && <span className="tab-count">{unassignedOrders.length}</span>}
+        <button className={`nav-item ${tab === 'refund-reviews' ? 'active' : ''}`} onClick={() => setTab('refund-reviews')}>
+          <Scale size={16} /> Dispute Reviews ({disputedOrders.length})
         </button>
-        <button className={`portal-nav-btn ${tab === 'deliveries' ? 'active' : ''}`} onClick={() => setTab('deliveries')}>
-          Active Deliveries ({activeDeliveries.length})
+        <button className={`nav-item ${tab === 'deliveries' ? 'active' : ''}`} onClick={() => setTab('deliveries')}>
+          <Truck size={16} /> Couriers & Deliveries ({orders.filter(o => o.deliveryAgentId).length})
         </button>
-        <button className={`portal-nav-btn ${tab === 'audit' ? 'active' : ''}`} onClick={() => setTab('audit')}>
-          Audit Trail
-        </button>
+        {caseData && (
+          <button className={`nav-item ${tab === 'audit' ? 'active' : ''}`} onClick={() => setTab('audit')}>
+            <FileCheck size={16} /> Audit Trail
+          </button>
+        )}
       </nav>
 
-      {/* NOTICE */}
       {notice && (
-        <div suppressHydrationWarning className="message success" style={{ margin: 'var(--s4) var(--s8)' }}>
-          <CheckCircle2 size={16} /> {notice}
+        <div suppressHydrationWarning className="notice-banner">
+          <span>{notice}</span>
+          <button onClick={() => setNotice('')}><X size={14} /></button>
         </div>
       )}
 
       {loading ? (
-        <div suppressHydrationWarning className="loading" style={{ margin: 'var(--s12) auto' }}>
-          <RotateCw className="spin" size={24} /> Loading operational records…
+        <div className="portal-loading">
+          <RotateCw size={24} className="spin" />
+          <p>Loading operational data...</p>
         </div>
       ) : (
-        <main suppressHydrationWarning className="portal-main">
+        <main suppressHydrationWarning className="portal-content">
           {/* TAB 1: DASHBOARD */}
           {tab === 'dashboard' && (
-            <div suppressHydrationWarning className="portal-grid">
-              <div suppressHydrationWarning className="portal-column">
-                <div suppressHydrationWarning className="stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 'var(--s4)', marginBottom: 'var(--s6)' }}>
-                  <div suppressHydrationWarning className="portal-card" style={{ padding: 'var(--s4)' }}>
-                    <span style={{ fontSize: 'var(--xs)', color: 'var(--text-muted)' }}>Orders Awaiting Courier</span>
-                    <h3 style={{ fontSize: 'var(--2xl)', margin: 'var(--s1) 0 0' }}>{unassignedOrders.length}</h3>
-                  </div>
-                  <div suppressHydrationWarning className="portal-card" style={{ padding: 'var(--s4)' }}>
-                    <span style={{ fontSize: 'var(--xs)', color: 'var(--text-muted)' }}>Out for Delivery</span>
-                    <h3 style={{ fontSize: 'var(--2xl)', margin: 'var(--s1) 0 0' }}>{activeDeliveries.length}</h3>
-                  </div>
-                  <div suppressHydrationWarning className="portal-card" style={{ padding: 'var(--s4)' }}>
-                    <span style={{ fontSize: 'var(--xs)', color: 'var(--text-muted)' }}>Active Delivery Disputes</span>
-                    <h3 style={{ fontSize: 'var(--2xl)', margin: 'var(--s1) 0 0', color: '#b3311f' }}>{disputedOrders.length}</h3>
-                  </div>
-                  <div suppressHydrationWarning className="portal-card" style={{ padding: 'var(--s4)' }}>
-                    <span style={{ fontSize: 'var(--xs)', color: 'var(--text-muted)' }}>Refund Reviews Pending</span>
-                    <h3 style={{ fontSize: 'var(--2xl)', margin: 'var(--s1) 0 0', color: 'var(--accent)' }}>{refundAwaitingOrders.length}</h3>
-                  </div>
+            <div suppressHydrationWarning className="dashboard-grid">
+              {/* METRICS */}
+              <div suppressHydrationWarning className="metrics-row">
+                <div suppressHydrationWarning className="metric-card">
+                  <span className="metric-label">Total Orders Placed</span>
+                  <strong className="metric-value">{orders.length}</strong>
+                  <small>Real-time database records</small>
                 </div>
+                <div suppressHydrationWarning className="metric-card warning">
+                  <span className="metric-label">Active Disputes</span>
+                  <strong className="metric-value">{disputedOrders.length}</strong>
+                  <small>Awaiting evidence reconciliation</small>
+                </div>
+                <div suppressHydrationWarning className="metric-card success">
+                  <span className="metric-label">Assigned Deliveries</span>
+                  <strong className="metric-value">{orders.filter(o => o.deliveryAgentId).length}</strong>
+                  <small>Registered couriers on route</small>
+                </div>
+                <div suppressHydrationWarning className="metric-card">
+                  <span className="metric-label">Registered Couriers</span>
+                  <strong className="metric-value">{agents.length}</strong>
+                  <small>Available in dispatch pool</small>
+                </div>
+              </div>
 
-                {/* ACTION REQUIRED: UNASSIGNED ORDERS */}
-                <section suppressHydrationWarning className="portal-card" style={{ marginBottom: 'var(--s6)' }}>
-                  <div suppressHydrationWarning className="section-title">
-                    <div>
-                      <h2>Orders Requiring Courier Assignment</h2>
-                      <p>Assign qualified delivery agents to customer purchases.</p>
+              {orders.length === 0 ? (
+                <div suppressHydrationWarning className="portal-card empty-state" style={{ textAlign: 'center', padding: 'var(--s8) var(--s4)' }}>
+                  <Inbox size={48} style={{ color: 'var(--text-muted)', margin: '0 auto var(--s3)' }} />
+                  <h3>No Orders Have Been Placed Yet</h3>
+                  <p style={{ color: 'var(--text-muted)', maxWidth: 460, margin: '0 auto var(--s4)' }}>
+                    When a customer registers and places an order from the product catalog, it will appear here in real-time for courier dispatch and dispute tracking.
+                  </p>
+                </div>
+              ) : (
+                /* TWO COLUMN LAYOUT */
+                <div suppressHydrationWarning className="two-column-layout">
+                  {/* ORDERS QUEUE */}
+                  <div suppressHydrationWarning className="portal-card">
+                    <div suppressHydrationWarning className="section-title">
+                      <h3>Live Customer Orders</h3>
+                      <span className="badge neutral">{orders.length} Orders</span>
+                    </div>
+                    <div suppressHydrationWarning className="orders-list">
+                      {orders.map(o => (
+                        <div
+                          key={o.id}
+                          className={`order-item ${selectedOrderId === o.id ? 'active' : ''}`}
+                          onClick={() => setSelectedOrderId(o.id)}
+                        >
+                          <div suppressHydrationWarning className="order-item-header">
+                            <strong>{o.id}</strong>
+                            <span className={`badge ${o.status.includes('disputed') ? 'danger' : o.deliveryStatus === 'DELIVERED' ? 'success' : 'neutral'}`}>
+                              {o.deliveryStatus || o.status}
+                            </span>
+                          </div>
+                          <div suppressHydrationWarning className="order-item-details">
+                            <span>{o.item}</span> · <strong>${o.amount.toFixed(2)}</strong>
+                          </div>
+                          <small style={{ color: 'var(--text-muted)', display: 'block', marginTop: 4 }}>
+                            Customer: {o.speaker} · {o.deliveryAgentName ? `Courier: ${o.deliveryAgentName}` : 'Unassigned'}
+                          </small>
+                        </div>
+                      ))}
                     </div>
                   </div>
 
-                  {unassignedOrders.length === 0 ? (
-                    <div suppressHydrationWarning className="empty-state">
-                      <CheckCircle2 size={28} style={{ color: '#436b1d' }} />
-                      <p>All placed orders have been assigned to delivery agents.</p>
+                  {/* CASE / ORDER INSPECTOR */}
+                  {activeSelectedOrder ? (
+                    <div suppressHydrationWarning className="portal-card">
+                      <div suppressHydrationWarning className="section-title">
+                        <h3>Order & Case Details · {activeSelectedOrder.id}</h3>
+                        {!activeSelectedOrder.deliveryAgentId && (
+                          <button className="button primary small" onClick={() => setAssigningOrder(activeSelectedOrder)}>
+                            <Truck size={14} /> Assign Courier
+                          </button>
+                        )}
+                      </div>
+
+                      <div suppressHydrationWarning className="details-grid" style={{ marginBottom: 'var(--s4)' }}>
+                        <div>
+                          <label>Item</label>
+                          <strong>{activeSelectedOrder.item}</strong>
+                        </div>
+                        <div>
+                          <label>Amount</label>
+                          <strong>${activeSelectedOrder.amount.toFixed(2)}</strong>
+                        </div>
+                        <div>
+                          <label>Customer</label>
+                          <strong>{activeSelectedOrder.speaker}</strong>
+                        </div>
+                        <div>
+                          <label>Delivery Address</label>
+                          <small>{activeSelectedOrder.deliveryAddress || 'Standard Shipping Address'}</small>
+                        </div>
+                        <div>
+                          <label>Courier Assigned</label>
+                          <strong>{activeSelectedOrder.deliveryAgentName || 'Not yet assigned'}</strong>
+                        </div>
+                        <div>
+                          <label>Delivery Status</label>
+                          <span className="badge neutral">{activeSelectedOrder.deliveryStatus || 'READY_FOR_ASSIGNMENT'}</span>
+                        </div>
+                      </div>
+
+                      {activeSelectedOrder.deliveryProof && (
+                        <div suppressHydrationWarning className="proof-box" style={{ background: 'var(--bg-elevated)', padding: 'var(--s3)', borderRadius: 'var(--rds-radius-md)', marginBottom: 'var(--s4)' }}>
+                          <h4>Courier Delivery Proof</h4>
+                          <p>Note: &ldquo;{activeSelectedOrder.deliveryProof.note}&rdquo;</p>
+                          {activeSelectedOrder.deliveryProof.photoUrl && (
+                            <img 
+                              src={activeSelectedOrder.deliveryProof.photoUrl} 
+                              alt="Proof" 
+                              style={{ width: '100%', maxHeight: 180, objectFit: 'cover', borderRadius: 'var(--rds-radius-sm)', marginTop: 8 }} 
+                            />
+                          )}
+                        </div>
+                      )}
+
+                      {/* COPILOT Q&A */}
+                      <div suppressHydrationWarning className="copilot-box">
+                        <h4>AI Case Intelligence</h4>
+                        <form onSubmit={handleAskCopilot} style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                          <input
+                            type="text"
+                            placeholder="Ask about this case (e.g. What evidence conflicts?)"
+                            value={copilotQuestion}
+                            onChange={e => setCopilotQuestion(e.target.value)}
+                            style={{ flex: 1 }}
+                          />
+                          <button type="submit" className="button primary small" disabled={copilotLoading}>
+                            {copilotLoading ? <RotateCw size={14} className="spin" /> : <Send size={14} />}
+                          </button>
+                        </form>
+                        {copilotAnswer && (
+                          <div suppressHydrationWarning className="ai-answer-box" style={{ marginTop: 12, padding: 12, background: 'var(--bg-elevated)', borderRadius: 'var(--rds-radius-md)', fontSize: '0.85rem' }}>
+                            <p style={{ whiteSpace: 'pre-wrap' }}>{copilotAnswer}</p>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   ) : (
-                    <div suppressHydrationWarning className="orders-table-wrapper">
-                      <table className="portal-table">
-                        <thead>
-                          <tr>
-                            <th>Order ID</th>
-                            <th>Product ID / Item</th>
-                            <th>Customer</th>
-                            <th>Delivery Address</th>
-                            <th>Amount</th>
-                            <th>Action</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {unassignedOrders.map(o => (
-                            <tr key={o.id}>
-                              <td><strong>{o.id}</strong></td>
-                              <td>
-                                <span className="badge neutral" style={{ marginRight: '6px' }}>{o.productId || 'PROD-WH-001'}</span>
-                                {o.item}
-                              </td>
-                              <td>{o.speaker}</td>
-                              <td><small>{o.deliveryAddress || '404 Skyline Ave, Apt 12B, Seattle, WA'}</small></td>
-                              <td>{o.currency} {o.amount.toFixed(2)}</td>
-                              <td>
-                                <button className="button primary small" onClick={() => setAssigningOrder(o)}>
-                                  <Truck size={13} /> Assign Courier
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                    <div suppressHydrationWarning className="portal-card empty-state" style={{ textAlign: 'center', padding: 'var(--s8) var(--s4)' }}>
+                      <p>Select an order from the list to view operational details.</p>
                     </div>
                   )}
-                </section>
-              </div>
-
-              {/* SIDEBAR: FLAGSHIP DISPUTES */}
-              <aside suppressHydrationWarning className="portal-sidebar">
-                <div suppressHydrationWarning className="portal-card">
-                  <div suppressHydrationWarning className="section-title">
-                    <div>
-                      <h3>High-Priority Dispute Queue</h3>
-                      <p>Requires Owner Evidence & Refund Review.</p>
-                    </div>
-                    <AlertTriangle size={18} style={{ color: '#b3311f' }} />
-                  </div>
-
-                  <div suppressHydrationWarning className="orders-list">
-                    {disputedOrders.map(o => (
-                      <article
-                        key={o.id}
-                        className={`order-card ${selectedOrderId === o.id ? 'active' : ''}`}
-                        onClick={() => { setSelectedOrderId(o.id); setTab('refund-reviews'); }}
-                      >
-                        <div suppressHydrationWarning className="order-meta">
-                          <span className="order-id">{o.id}</span>
-                          <span className="badge warning">Score: 82/100</span>
-                        </div>
-                        <div suppressHydrationWarning className="order-details">
-                          <h4>{o.item}</h4>
-                          <span className="order-amount">{o.currency} {o.amount.toFixed(2)}</span>
-                        </div>
-                        <p style={{ fontSize: 'var(--xs)', color: 'var(--text-muted)', margin: 'var(--s2) 0 0' }}>
-                          Customer: {o.speaker} · Reception conflict & overdue commitment
-                        </p>
-                      </article>
-                    ))}
-                  </div>
-
-                  <button className="button primary full" onClick={() => setTab('refund-reviews')} style={{ marginTop: 'var(--s4)' }}>
-                    <Scale size={15} /> Open Refund Review Console
-                  </button>
                 </div>
-              </aside>
+              )}
             </div>
           )}
 
-          {/* TAB 2: FLAGSHIP REFUND REVIEWS */}
-          {tab === 'refund-reviews' && caseData && (
-            <div suppressHydrationWarning className="portal-grid">
-              <div suppressHydrationWarning className="portal-column">
-                {/* CASE HERO */}
-                <section suppressHydrationWarning className="portal-card">
-                  <div suppressHydrationWarning className="section-title">
-                    <div>
-                      <span className="eyebrow"><Scale size={13} /> Owner Refund Assessment</span>
-                      <h2>Case {caseData.order.id} · {caseData.order.item}</h2>
-                      <p>Customer: <strong>{caseData.order.speaker}</strong> · Order Value: <strong>{caseData.order.currency} {caseData.order.amount.toFixed(2)}</strong></p>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <span className={`badge ${caseData.ownerDecision?.decision === 'APPROVE_REFUND' ? 'success' : 'warning'}`}>
-                        {caseData.ownerDecision ? `Decision: ${caseData.ownerDecision.decision.replaceAll('_', ' ')}` : 'Decision Pending'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* 82 / 100 EXPLAINABLE SCORE GAUGE */}
-                  <div suppressHydrationWarning className="score-hero-box" style={{ background: 'linear-gradient(135deg, rgba(0,104,140,0.06), rgba(34,126,158,0.12))', border: '1px solid rgba(0,104,140,0.3)', borderRadius: 'var(--rds-radius-lg)', padding: 'var(--s5)', margin: 'var(--s4) 0' }}>
-                    <div suppressHydrationWarning style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(0,104,140,0.2)', paddingBottom: 'var(--s3)' }}>
-                      <div>
-                        <span style={{ fontSize: 'var(--xs)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent)' }}>
-                          Deterministic AI Refund Assessment
-                        </span>
-                        <h2 style={{ fontSize: 'var(--3xl)', margin: 'var(--s1) 0', color: 'var(--text)' }}>
-                          {assessment?.score || 82} <span style={{ fontSize: 'var(--base)', color: 'var(--text-muted)' }}>/ 100</span>
-                        </h2>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <span className="badge success" style={{ fontSize: 'var(--sm)', padding: '6px 12px' }}>
-                          {assessment?.levelLabel || 'Strong evidence supporting refund review'}
-                        </span>
-                        <small style={{ display: 'block', color: 'var(--text-muted)', marginTop: '4px' }}>Deterministic Model v1.0</small>
-                      </div>
-                    </div>
-
-                    {/* TRANSPARENT SCORE FACTORS BREAKDOWN */}
-                    <div suppressHydrationWarning style={{ marginTop: 'var(--s4)' }}>
-                      <h4 style={{ fontSize: 'var(--xs)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)', marginBottom: 'var(--s3)' }}>
-                        Why this score? (Explainable Factor Breakdown):
-                      </h4>
-                      <div suppressHydrationWarning style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 'var(--s3)' }}>
-                        <div suppressHydrationWarning className="factor-pill" style={{ background: 'var(--bg-card)', padding: 'var(--s3)', borderRadius: 'var(--rds-radius-md)', border: '1px solid var(--line)' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: 'var(--xs)' }}>
-                            <span>Customer Evidence Consistency</span>
-                            <strong style={{ color: '#436b1d' }}>+{assessment?.factors.customerEvidence || 18} / 20</strong>
-                          </div>
-                          <small style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{assessment?.factors.explanations.customerEvidence || 'Customer provided specific testimony & disputed location photo.'}</small>
-                        </div>
-
-                        <div suppressHydrationWarning className="factor-pill" style={{ background: 'var(--bg-card)', padding: 'var(--s3)', borderRadius: 'var(--rds-radius-md)', border: '1px solid var(--line)' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: 'var(--xs)' }}>
-                            <span>Delivery Evidence Conflict</span>
-                            <strong style={{ color: '#436b1d' }}>+{assessment?.factors.deliveryConsistency || 17} / 20</strong>
-                          </div>
-                          <small style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{assessment?.factors.explanations.deliveryConsistency || 'Courier photo shows reception desk; customer building has no reception.'}</small>
-                        </div>
-
-                        <div suppressHydrationWarning className="factor-pill" style={{ background: 'var(--bg-card)', padding: 'var(--s3)', borderRadius: 'var(--rds-radius-md)', border: '1px solid var(--line)' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: 'var(--xs)' }}>
-                            <span>Prior Support Commitments</span>
-                            <strong style={{ color: '#436b1d' }}>+{assessment?.factors.commitments || 15} / 15</strong>
-                          </div>
-                          <small style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{assessment?.factors.explanations.commitments || 'Agent promised refund within 24h in verified record [SUP-1042-01].'}</small>
-                        </div>
-
-                        <div suppressHydrationWarning className="factor-pill" style={{ background: 'var(--bg-card)', padding: 'var(--s3)', borderRadius: 'var(--rds-radius-md)', border: '1px solid var(--line)' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: 'var(--xs)' }}>
-                            <span>Financial Ledger State</span>
-                            <strong style={{ color: '#436b1d' }}>+{assessment?.factors.financialHistory || 10} / 10</strong>
-                          </div>
-                          <small style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{assessment?.factors.explanations.financialHistory || 'Payment captured; refund ledger status is not_initiated [REF-PP-1042].'}</small>
-                        </div>
-
-                        <div suppressHydrationWarning className="factor-pill" style={{ background: 'var(--bg-card)', padding: 'var(--s3)', borderRadius: 'var(--rds-radius-md)', border: '1px solid var(--line)' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: 'var(--xs)' }}>
-                            <span>Dispute Policy Eligibility</span>
-                            <strong style={{ color: '#436b1d' }}>+{assessment?.factors.policyEligibility || 10} / 10</strong>
-                          </div>
-                          <small style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{assessment?.factors.explanations.policyEligibility || 'Meets carrier non-receipt guidelines under regional policy [POL-US-2].'}</small>
-                        </div>
-
-                        <div suppressHydrationWarning className="factor-pill" style={{ background: 'var(--bg-card)', padding: 'var(--s3)', borderRadius: 'var(--rds-radius-md)', border: '1px solid var(--line)' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: 'var(--xs)' }}>
-                            <span>Timeline & Reporting Window</span>
-                            <strong style={{ color: '#436b1d' }}>+{assessment?.factors.timelineConsistency || 8} / 10</strong>
-                          </div>
-                          <small style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{assessment?.factors.explanations.timelineConsistency || 'Dispute logged promptly within carrier investigation window.'}</small>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* EVIDENCE RECONCILIATION CARDS */}
-                  <div suppressHydrationWarning style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--s4)', margin: 'var(--s6) 0' }}>
-                    <article className="evidence-card" style={{ borderLeft: '4px solid #436b1d' }}>
-                      <span className="badge success" style={{ marginBottom: 'var(--s2)' }}>Evidence Supporting Refund</span>
-                      <ul style={{ margin: 'var(--s2) 0 0', paddingLeft: 'var(--s4)', fontSize: 'var(--xs)', color: 'var(--text)' }}>
-                        <li>Customer provided consistent statement of non-receipt.</li>
-                        <li>Courier photo depicts reception area; apartment building has no reception desk.</li>
-                        <li>Overdue refund commitment verified in support thread.</li>
-                        <li>No prior refund found in SQLite financial ledger.</li>
-                      </ul>
-                    </article>
-
-                    <article className="evidence-card" style={{ borderLeft: '4px solid #b3311f' }}>
-                      <span className="badge warning" style={{ marginBottom: 'var(--s2)' }}>Uncertainty & Verification Points</span>
-                      <ul style={{ margin: 'var(--s2) 0 0', paddingLeft: 'var(--s4)', fontSize: 'var(--xs)', color: 'var(--text)' }}>
-                        <li>Courier scan recorded at 16:30 UTC without recipient signature.</li>
-                        <li>Delivery photograph lacks GPS geotag verification.</li>
-                        <li>Recipient identity authorization verified with account holder.</li>
-                      </ul>
-                    </article>
-                  </div>
-
-                  {/* HUMAN-IN-THE-LOOP: OWNER DECISION BAR */}
-                  <div suppressHydrationWarning className="owner-decision-bar" style={{ background: 'var(--bg-elevated)', border: '2px solid var(--accent)', borderRadius: 'var(--rds-radius-lg)', padding: 'var(--s5)' }}>
-                    <div suppressHydrationWarning style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--s4)' }}>
-                      <div>
-                        <span className="eyebrow" style={{ color: 'var(--accent)' }}><ShieldCheck size={14} /> Final Human-in-the-Loop Authority</span>
-                        <h3 style={{ margin: 0 }}>Record Operations Owner Decision</h3>
-                      </div>
-                      <span className="badge neutral">Order {caseData.order.id}</span>
-                    </div>
-
-                    <div suppressHydrationWarning style={{ display: 'flex', gap: 'var(--s3)', flexWrap: 'wrap' }}>
-                      <button 
-                        className="button primary" 
-                        onClick={() => setDecisionModal('APPROVE_REFUND')}
-                        disabled={caseData.refund.status === 'initiated'}
-                      >
-                        <Check size={16} /> {caseData.refund.status === 'initiated' ? 'Refund Already Approved' : 'Approve Simulated Refund'}
-                      </button>
-                      <button className="button secondary" onClick={() => setDecisionModal('REQUEST_MORE_EVIDENCE')}>
-                        <ClipboardList size={16} /> Request More Evidence
-                      </button>
-                      <button className="button secondary" onClick={() => setDecisionModal('ESCALATE')}>
-                        <AlertTriangle size={16} /> Escalate to Executive Review
-                      </button>
-                      <button className="button secondary" onClick={() => setDecisionModal('REJECT_REFUND')}>
-                        <X size={16} /> Reject Refund
-                      </button>
-                    </div>
-                  </div>
-                </section>
-              </div>
-
-              {/* SIDEBAR: OWNER AI COPILOT */}
-              <aside suppressHydrationWarning className="portal-sidebar">
-                <div suppressHydrationWarning className="portal-card">
-                  <div suppressHydrationWarning className="section-title">
-                    <div>
-                      <h3>Owner Copilot Q&A</h3>
-                      <p>Ask anything about this case's evidence or scoring.</p>
-                    </div>
-                    <Bot size={20} className="text-accent" />
-                  </div>
-
-                  <div suppressHydrationWarning className="quick-actions-bar" style={{ margin: 'var(--s3) 0' }}>
-                    <div suppressHydrationWarning className="quick-actions-chips">
-                      <button className="quick-chip" onClick={() => askOwnerCopilot("Why did the assessment assign 82 / 100?")}>
-                        Why 82 score?
-                      </button>
-                      <button className="quick-chip" onClick={() => askOwnerCopilot("What evidence conflicts between courier and customer?")}>
-                        Evidence conflicts?
-                      </button>
-                      <button className="quick-chip" onClick={() => askOwnerCopilot("What should I verify before approving?")}>
-                        What to verify?
-                      </button>
-                    </div>
-                  </div>
-
-                  {copilotLoading && (
-                    <div suppressHydrationWarning className="loading" style={{ margin: 'var(--s4) 0' }}>
-                      <RotateCw className="spin" size={16} /> Consulting grounded case evidence…
-                    </div>
-                  )}
-
-                  {copilotAnswer && (
-                    <article className="chat-card-assistant" style={{ margin: 'var(--s4) 0' }}>
-                      <div suppressHydrationWarning className="chat-assistant-header">
-                        <div suppressHydrationWarning className="chat-assistant-meta">
-                          <Bot size={14} /> <strong>Operations Copilot</strong>
-                        </div>
-                        <span className="badge success">Grounded</span>
-                      </div>
-                      <div suppressHydrationWarning className="chat-answer-text">
-                        {copilotAnswer}
-                      </div>
-                    </article>
-                  )}
-
-                  <form
-                    onSubmit={e => { e.preventDefault(); askOwnerCopilot(); }}
-                    className="chat-input-wrapper"
-                    style={{ marginTop: 'var(--s3)' }}
-                  >
-                    <input
-                      type="text"
-                      className="chat-input"
-                      placeholder="Ask owner copilot..."
-                      value={copilotQuestion}
-                      onChange={e => setCopilotQuestion(e.target.value)}
-                      disabled={copilotLoading}
-                    />
-                    <button type="submit" className="button primary" disabled={!copilotQuestion.trim() || copilotLoading}>
-                      <Send size={14} />
-                    </button>
-                  </form>
-                </div>
-              </aside>
-            </div>
-          )}
-
-          {/* TAB 3: ALL ORDERS */}
+          {/* TAB 2: ALL ORDERS */}
           {tab === 'orders' && (
             <section suppressHydrationWarning className="portal-card">
               <div suppressHydrationWarning className="section-title">
                 <div>
-                  <h2>All Customer Orders & Dispatch Status</h2>
-                  <p>Complete orders lifecycle from placement to fulfillment and dispute.</p>
+                  <h2>All Customer Orders</h2>
+                  <p>Authoritative order ledger queried directly from the SQLite database.</p>
                 </div>
               </div>
-              <div suppressHydrationWarning className="orders-table-wrapper">
-                <table className="portal-table">
-                  <thead>
-                    <tr>
-                      <th>Order ID</th>
-                      <th>Product ID / Item</th>
-                      <th>Customer</th>
-                      <th>Delivery Agent</th>
-                      <th>Amount</th>
-                      <th>Status</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {orders.map(o => (
-                      <tr key={o.id}>
-                        <td><strong>{o.id}</strong></td>
-                        <td>
-                          <span className="badge neutral" style={{ marginRight: '6px' }}>{o.productId || 'PROD-WH-001'}</span>
-                          {o.item}
-                        </td>
-                        <td>{o.speaker}</td>
-                        <td>{o.deliveryAgentName || <span style={{ color: 'var(--text-muted)' }}>Unassigned</span>}</td>
-                        <td>{o.currency} {o.amount.toFixed(2)}</td>
-                        <td>
-                          <span className={`badge ${o.status.includes('disputed') ? 'warning' : (o.status.includes('Delivered') ? 'success' : 'neutral')}`}>
-                            {o.status}
-                          </span>
-                        </td>
-                        <td>
-                          {!o.deliveryAgentId ? (
-                            <button className="button primary small" onClick={() => setAssigningOrder(o)}>
-                              Assign Courier
-                            </button>
-                          ) : (
-                            <button className="button secondary small" onClick={() => { setSelectedOrderId(o.id); setTab('refund-reviews'); }}>
-                              Inspect Case
-                            </button>
-                          )}
-                        </td>
+
+              {orders.length === 0 ? (
+                <div suppressHydrationWarning className="empty-state" style={{ textAlign: 'center', padding: 'var(--s8) var(--s4)' }}>
+                  <Inbox size={48} style={{ color: 'var(--text-muted)', margin: '0 auto var(--s3)' }} />
+                  <h3>No Orders Found</h3>
+                  <p style={{ color: 'var(--text-muted)' }}>No customer orders have been placed yet.</p>
+                </div>
+              ) : (
+                <div suppressHydrationWarning className="orders-table-wrapper">
+                  <table className="portal-table">
+                    <thead>
+                      <tr>
+                        <th>Order ID</th>
+                        <th>Product</th>
+                        <th>Customer</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Courier</th>
+                        <th>Action</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {orders.map(o => (
+                        <tr key={o.id}>
+                          <td><strong>{o.id}</strong></td>
+                          <td>{o.item}</td>
+                          <td>{o.speaker}</td>
+                          <td>${o.amount.toFixed(2)}</td>
+                          <td>
+                            <span className={`badge ${o.status.includes('disputed') ? 'danger' : o.deliveryStatus === 'DELIVERED' ? 'success' : 'neutral'}`}>
+                              {o.deliveryStatus || o.status}
+                            </span>
+                          </td>
+                          <td>{o.deliveryAgentName || <span style={{ color: 'var(--text-muted)' }}>Unassigned</span>}</td>
+                          <td>
+                            {!o.deliveryAgentId ? (
+                              <button className="button primary small" onClick={() => setAssigningOrder(o)}>
+                                Assign Courier
+                              </button>
+                            ) : (
+                              <button className="button secondary small" onClick={() => { setSelectedOrderId(o.id); setTab('dashboard'); }}>
+                                View Details
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* TAB 3: REFUND REVIEWS */}
+          {tab === 'refund-reviews' && (
+            <section suppressHydrationWarning className="portal-card">
+              <div suppressHydrationWarning className="section-title">
+                <div>
+                  <h2>Dispute & Refund Evidence Reviews</h2>
+                  <p>Reconcile courier dropoff claims against customer statements with explainable scoring.</p>
+                </div>
               </div>
+
+              {disputedOrders.length === 0 ? (
+                <div suppressHydrationWarning className="empty-state" style={{ textAlign: 'center', padding: 'var(--s8) var(--s4)' }}>
+                  <ShieldCheck size={48} style={{ color: 'var(--text-muted)', margin: '0 auto var(--s3)' }} />
+                  <h3>No Active Disputes</h3>
+                  <p style={{ color: 'var(--text-muted)' }}>When a customer files a delivery dispute or refund request, it will appear here for review.</p>
+                </div>
+              ) : (
+                <div suppressHydrationWarning className="two-column-layout">
+                  {/* DISPUTES LIST */}
+                  <div suppressHydrationWarning className="orders-list">
+                    {disputedOrders.map(o => (
+                      <div
+                        key={o.id}
+                        className={`order-item ${selectedOrderId === o.id ? 'active' : ''}`}
+                        onClick={() => setSelectedOrderId(o.id)}
+                      >
+                        <div suppressHydrationWarning className="order-item-header">
+                          <strong>{o.id}</strong>
+                          <span className="badge danger">Disputed</span>
+                        </div>
+                        <div suppressHydrationWarning className="order-item-details">
+                          <span>{o.item}</span> · <strong>${o.amount.toFixed(2)}</strong>
+                        </div>
+                        <small style={{ color: 'var(--text-muted)' }}>Customer: {o.speaker}</small>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* ASSESSMENT & DECISION CONTROLS */}
+                  {caseData && (
+                    <div suppressHydrationWarning className="portal-card">
+                      <div suppressHydrationWarning className="section-title">
+                        <div>
+                          <h3>Case Review · {caseData.order.id}</h3>
+                          <small style={{ color: 'var(--text-muted)' }}>Customer: {caseData.order.speaker}</small>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button className="button primary small" onClick={() => setDecisionModal('APPROVE_REFUND')}>
+                            Approve Refund
+                          </button>
+                          <button className="button secondary small" onClick={() => setDecisionModal('REQUEST_MORE_EVIDENCE')}>
+                            Request Evidence
+                          </button>
+                          <button className="button secondary small" onClick={() => setDecisionModal('REJECT_REFUND')}>
+                            Reject
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* ASSESSMENT SCORE */}
+                      {assessment && (
+                        <div suppressHydrationWarning className="score-summary-box" style={{ background: 'var(--bg-elevated)', padding: 16, borderRadius: 'var(--rds-radius-md)', marginBottom: 16 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                              <span className="eyebrow">Deterministic Assessment</span>
+                              <h2 style={{ fontSize: '2rem', color: 'var(--brand-teal)' }}>{assessment.score} <span style={{ fontSize: '1rem', color: 'var(--text-muted)' }}>/ 100</span></h2>
+                              <p style={{ fontSize: '0.85rem' }}>{assessment.levelLabel}</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* STATEMENTS & EVIDENCE */}
+                      <div suppressHydrationWarning className="sources-list">
+                        <h4>Case Sources & Statements</h4>
+                        {caseData.sources.map(s => (
+                          <div key={s.id} style={{ padding: 8, borderBottom: '1px solid var(--border-subtle)', fontSize: '0.85rem' }}>
+                            <strong>[{s.id}] {s.title}</strong>
+                            <p style={{ marginTop: 4 }}>{s.text}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
           )}
 
@@ -641,41 +591,49 @@ export default function OwnerPortal() {
               <div suppressHydrationWarning className="section-title">
                 <div>
                   <h2>Active Courier Dispatch & Deliveries</h2>
-                  <p>Live tracking of courier routes, attempted dropoffs, and proof submissions.</p>
+                  <p>Live tracking of courier routes, dropoffs, and proof submissions.</p>
                 </div>
               </div>
-              <div suppressHydrationWarning className="orders-table-wrapper">
-                <table className="portal-table">
-                  <thead>
-                    <tr>
-                      <th>Order ID</th>
-                      <th>Courier Name</th>
-                      <th>Delivery Address</th>
-                      <th>Delivery Status</th>
-                      <th>Proof Submitted</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {orders.filter(o => o.deliveryAgentId).map(o => (
-                      <tr key={o.id}>
-                        <td><strong>{o.id}</strong></td>
-                        <td>{o.deliveryAgentName || 'Daniel Kumar'}</td>
-                        <td>{o.deliveryAddress || '404 Skyline Ave, Apt 12B, Seattle, WA'}</td>
-                        <td>
-                          <span className="badge neutral">{o.deliveryStatus || 'OUT_FOR_DELIVERY'}</span>
-                        </td>
-                        <td>
-                          {o.deliveryProof ? (
-                            <span className="badge success"><Check size={12} /> Photo & Note</span>
-                          ) : (
-                            <span className="badge neutral">Pending Dropoff</span>
-                          )}
-                        </td>
+              {orders.filter(o => o.deliveryAgentId).length === 0 ? (
+                <div suppressHydrationWarning className="empty-state" style={{ textAlign: 'center', padding: 'var(--s8) var(--s4)' }}>
+                  <Truck size={48} style={{ color: 'var(--text-muted)', margin: '0 auto var(--s3)' }} />
+                  <h3>No Deliveries Assigned</h3>
+                  <p style={{ color: 'var(--text-muted)' }}>Assign a delivery agent to an order to begin courier tracking.</p>
+                </div>
+              ) : (
+                <div suppressHydrationWarning className="orders-table-wrapper">
+                  <table className="portal-table">
+                    <thead>
+                      <tr>
+                        <th>Order ID</th>
+                        <th>Courier Name</th>
+                        <th>Delivery Address</th>
+                        <th>Delivery Status</th>
+                        <th>Proof Submitted</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {orders.filter(o => o.deliveryAgentId).map(o => (
+                        <tr key={o.id}>
+                          <td><strong>{o.id}</strong></td>
+                          <td>{o.deliveryAgentName || 'Courier'}</td>
+                          <td>{o.deliveryAddress || 'Standard Address'}</td>
+                          <td>
+                            <span className="badge neutral">{o.deliveryStatus || 'OUT_FOR_DELIVERY'}</span>
+                          </td>
+                          <td>
+                            {o.deliveryProof ? (
+                              <span className="badge success"><Check size={12} /> Photo & Note</span>
+                            ) : (
+                              <span className="badge neutral">Pending Dropoff</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </section>
           )}
 
@@ -717,30 +675,36 @@ export default function OwnerPortal() {
                 <label>Item & Delivery Destination</label>
                 <div style={{ background: 'var(--bg-elevated)', padding: 'var(--s3)', borderRadius: 'var(--rds-radius-md)' }}>
                   <strong>{assigningOrder.item}</strong> ({assigningOrder.currency} {assigningOrder.amount.toFixed(2)})<br />
-                  <small style={{ color: 'var(--text-muted)' }}>Destination: {assigningOrder.deliveryAddress || '404 Skyline Ave, Apt 12B, Seattle, WA'}</small>
+                  <small style={{ color: 'var(--text-muted)' }}>Destination: {assigningOrder.deliveryAddress || 'Standard Address'}</small>
                 </div>
               </div>
 
               <div suppressHydrationWarning className="form-group">
                 <label>Select Available Courier Agent</label>
-                <select
-                  value={selectedAgentId}
-                  onChange={e => setSelectedAgentId(e.target.value)}
-                  className="portal-select"
-                >
-                  {agents.map(ag => (
-                    <option key={ag.id} value={ag.id}>
-                      {ag.name} ({ag.status} · {ag.activeDeliveries} active)
-                    </option>
-                  ))}
-                </select>
+                {agents.length === 0 ? (
+                  <div style={{ background: 'var(--bg-elevated)', padding: 'var(--s3)', borderRadius: 'var(--rds-radius-md)', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                    No delivery agents are currently registered. A user must log in / register with the <strong>Delivery Agent</strong> role first.
+                  </div>
+                ) : (
+                  <select
+                    value={selectedAgentId}
+                    onChange={e => setSelectedAgentId(e.target.value)}
+                    className="portal-select"
+                  >
+                    {agents.map(ag => (
+                      <option key={ag.id} value={ag.id}>
+                        {ag.name} ({ag.status} · {ag.activeDeliveries} active)
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div suppressHydrationWarning className="modal-actions">
                 <button type="button" className="button secondary" onClick={() => setAssigningOrder(null)}>
                   Cancel
                 </button>
-                <button type="submit" className="button primary" disabled={busy}>
+                <button type="submit" className="button primary" disabled={busy || agents.length === 0}>
                   {busy ? 'Assigning…' : 'Confirm Assignment'}
                 </button>
               </div>

@@ -72,8 +72,19 @@ export function db() {
   CREATE TABLE IF NOT EXISTS owner_decisions(decisionId TEXT PRIMARY KEY, orderId TEXT REFERENCES orders(id), decision TEXT NOT NULL, reason TEXT NOT NULL, requiredEvidence TEXT, ownerName TEXT NOT NULL, timestamp TEXT NOT NULL, scoreSnapshot INTEGER NOT NULL, status TEXT NOT NULL);
   CREATE UNIQUE INDEX IF NOT EXISTS one_refund_per_order ON audits(orderId) WHERE kind='initiate_refund';`);
 
-  if (!(connection.prepare('SELECT count(*) as n FROM orders').get() as { n: number }).n) {
-    seed(connection);
+  // Seed policy rules if missing
+  const policyCount = (connection.prepare("SELECT count(*) as n FROM sources WHERE type='policy'").get() as { n: number }).n;
+  if (!policyCount) {
+    for (const s of sources.filter(src => src.type === 'policy')) {
+      connection.prepare('INSERT OR IGNORE INTO sources VALUES(?,?,?,?,?)').run(s.id, s.accountId, s.orderId, s.type, JSON.stringify(s));
+    }
+  }
+
+  // ONLY auto-seed fixture orders when explicitly in automated test environment
+  if (process.env.PARCELPROOF_TEST === '1') {
+    if (!(connection.prepare('SELECT count(*) as n FROM orders').get() as { n: number }).n) {
+      seed(connection);
+    }
   }
   return connection;
 }
@@ -858,11 +869,31 @@ export function listProducts(): Product[] {
 export function listDeliveryAgents(): DeliveryAgent[] {
   const c = db();
   const allOrders = listOrders();
-  return DELIVERY_AGENTS.map(ag => {
-    const active = allOrders.filter(o => o.deliveryAgentId === ag.id && !['DELIVERED', 'DELIVERY_CONFIRMED'].includes(o.deliveryStatus || '')).length;
+  const registered = c.prepare("SELECT * FROM users WHERE role='DELIVERY_AGENT'").all() as any[];
+  
+  if (registered.length === 0) {
+    // If in test mode, fall back to DELIVERY_AGENTS fixtures
+    if (process.env.PARCELPROOF_TEST === '1') {
+      return DELIVERY_AGENTS.map(ag => {
+        const active = allOrders.filter(o => o.deliveryAgentId === ag.id && !['DELIVERED', 'DELIVERY_CONFIRMED'].includes(o.deliveryStatus || '')).length;
+        return { ...ag, activeDeliveries: active };
+      });
+    }
+    return [];
+  }
+
+  return registered.map(r => {
+    const active = allOrders.filter(o => (o.deliveryAgentId === (r.agentId || r.id) || o.deliveryAgentName === r.name) && !['DELIVERED', 'DELIVERY_CONFIRMED'].includes(o.deliveryStatus || '')).length;
+    const completed = allOrders.filter(o => (o.deliveryAgentId === (r.agentId || r.id) || o.deliveryAgentName === r.name) && ['DELIVERED', 'DELIVERY_CONFIRMED'].includes(o.deliveryStatus || '')).length;
     return {
-      ...ag,
-      activeDeliveries: active
+      id: r.agentId || r.id,
+      name: r.name,
+      email: r.email,
+      phone: '+1 (555) 019-2834',
+      status: active > 0 ? 'On delivery' : 'Available',
+      activeDeliveries: active,
+      completedDeliveries: completed,
+      disputedDeliveries: 0
     };
   });
 }
@@ -959,7 +990,8 @@ export function placeCustomerOrder(input: {
 export function assignDeliveryAgent(orderId: string, agentId: string, assignedBy: string): Order {
   const c = db();
   const order = getOrder(orderId);
-  const agent = DELIVERY_AGENTS.find(a => a.id === agentId) || DELIVERY_AGENTS[0];
+  const allAgents = listDeliveryAgents();
+  const agent = allAgents.find(a => a.id === agentId || a.name === agentId) || { id: agentId, name: 'Delivery Agent' };
 
   order.deliveryAgentId = agent.id;
   order.deliveryAgentName = agent.name;

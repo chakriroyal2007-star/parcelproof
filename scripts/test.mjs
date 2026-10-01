@@ -15,7 +15,7 @@ for (const file of files) {
   const res = spawnSync(
     process.execPath,
     ['--import', 'tsx', '--test', file],
-    { stdio: 'inherit', env: { ...process.env, AI_MODE: 'fixture' } }
+    { stdio: 'inherit', env: { ...process.env, AI_MODE: 'fixture', PARCELPROOF_TEST: '1' } }
   );
   if (res.status !== 0) {
     totalExit = res.status || 1;
