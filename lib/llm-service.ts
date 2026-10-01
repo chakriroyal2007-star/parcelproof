@@ -24,7 +24,7 @@ import {
   getAudits,
   getAdminOverview
 } from './db';
-import { retrieve, client } from './retrieval';
+import { retrieve, client, getModel } from './retrieval';
 import { analyze as runEngineAnalyze } from './engine';
 import type { 
   Order, 
@@ -106,7 +106,7 @@ export class LLMService {
 
     if (mode() === 'live' && hasApiKey) {
       try {
-        modelUsed = process.env.OPENROUTER_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini';
+        modelUsed = getModel();
         const contextPayload = {
           now: now(),
           caseId,
@@ -634,7 +634,7 @@ export class LLMService {
     
     if (mode() === 'live' && (process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY)) {
       try {
-        const liveModel = process.env.OPENROUTER_MODEL || process.env.OPENAI_MODEL || 'openai/gpt-4o-mini';
+        const liveModel = getModel();
         const completion = await client().chat.completions.create({
           model: liveModel,
           messages: [
@@ -689,7 +689,7 @@ export class LLMService {
 
     if (mode() === 'live' && (process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY)) {
       try {
-        const liveModel = process.env.OPENROUTER_MODEL || process.env.OPENAI_MODEL || 'openai/gpt-4o-mini';
+        const liveModel = getModel();
         const completion = await client().chat.completions.create({
           model: liveModel,
           messages: [

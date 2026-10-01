@@ -21,9 +21,9 @@ import type {
 let connection: DatabaseSync | undefined;
 export const now = () => process.env.DEMO_NOW || FIXTURE_NOW;
 export const mode = (): 'fixture'|'live' => {
-  if (process.env.AI_MODE === 'fixture') return 'fixture';
+  const hasKey = !!(process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY);
+  if (hasKey) return 'live';
   if (process.env.AI_MODE === 'live') return 'live';
-  if (process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY) return 'live';
   return 'fixture';
 };
 
