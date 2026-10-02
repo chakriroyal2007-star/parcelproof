@@ -18,7 +18,7 @@ export async function POST(req: Request) {
       user = {
         id: 'USR-CUST-1042',
         email: 'alex@example.com',
-        name: 'Alex Morgan',
+        name: user?.name || 'Customer',
         role: 'CUSTOMER',
         accountId: 'HH-208'
       };

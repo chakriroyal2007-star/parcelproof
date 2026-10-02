@@ -173,7 +173,7 @@ const [currentUser, setCurrentUser] = useState<User | null>(null);
         <div suppressHydrationWarning className="portal-header-right">
           <div suppressHydrationWarning className="portal-user-badge">
             <ShieldCheck size={14} className="badge-icon-admin" />
-            <span className="user-name">{currentUser?.name || 'Sarah Connor'}</span>
+            <span className="user-name">{currentUser?.name || 'Administrator'}</span>
             <span className="user-role-label">ADMIN</span>
           </div>
           <button className="portal-action-link" onClick={() => router.push('/agent')}>
@@ -261,7 +261,7 @@ const [currentUser, setCurrentUser] = useState<User | null>(null);
                                 </span>
                               </td>
                               <td>
-                                {o.id === 'PP-1042' && <span className="signal-badge signal-danger">Refund promise overdue · Conflict detected</span>}
+                                {o.status === "DISPUTED" && <span className="signal-badge signal-danger">Active dispute · Under AI Investigation</span>}
                                 {o.id === 'PP-1043' && <span className="signal-badge signal-success">Refund initiated · Guardrail active</span>}
                                 {o.id === 'PP-1044' && <span className="signal-badge signal-info">Shared household · Identity partitioned</span>}
                                 {o.id === 'PP-1045' && <span className="signal-badge signal-warning">Missing photo scan · Insufficient evidence</span>}
@@ -368,7 +368,7 @@ const [currentUser, setCurrentUser] = useState<User | null>(null);
                             </span>
                           </td>
                           <td>
-                            {o.id === 'PP-1042' && <span className="signal-badge signal-danger">Overdue refund promise · Courier contradiction</span>}
+                            {o.status === "DISPUTED" && <span className="signal-badge signal-danger">Dispute Investigation Active</span>}
                             {o.id === 'PP-1043' && <span className="signal-badge signal-success">Refund initiated · Guardrail duplicate check</span>}
                             {o.id === 'PP-1044' && <span className="signal-badge signal-info">Shared household · Recipient validation</span>}
                             {o.id === 'PP-1045' && <span className="signal-badge signal-warning">No photo evidence · Escalation required</span>}
@@ -430,7 +430,7 @@ const [currentUser, setCurrentUser] = useState<User | null>(null);
                           <td>
                             <button className="portal-btn-sm" onClick={() => {
                               setSelectedAgentName(ag.name);
-                              setAssigningCase('PP-1042');
+                              setAssigningCase(data?.orders?.[0]?.id || "");
                             }}>
                               Allocate Case
                             </button>

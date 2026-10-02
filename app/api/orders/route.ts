@@ -33,7 +33,7 @@ export async function POST(req: Request) {
     const body = placeOrderSchema.parse(await req.json());
 
     const customerId = user?.id || 'USR-CUST-1042';
-    const customerName = body.customerName || user?.name || 'Alex Morgan';
+    const customerName = body.customerName || user?.name || 'Customer';
     const accountId = user?.accountId || 'HH-208';
 
     const order = placeCustomerOrder({

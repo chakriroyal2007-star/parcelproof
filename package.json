@@ -14,7 +14,8 @@
     "reset": "node --import tsx --env-file-if-exists=.env.local scripts/reset.ts",
     "setup": "node scripts/setup.mjs",
     "doctor": "node scripts/doctor.mjs",
-    "evaluate:live": "node --import tsx --env-file-if-exists=.env.local scripts/evaluate-live.ts"
+    "evaluate:live": "node --import tsx --env-file-if-exists=.env.local scripts/evaluate-live.ts",
+    "db:reset": "node --import tsx --env-file-if-exists=.env.local scripts/reset.ts"
   },
   "dependencies": {
     "next": "16.3.8",

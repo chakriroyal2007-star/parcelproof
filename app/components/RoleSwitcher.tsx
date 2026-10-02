@@ -17,7 +17,7 @@ interface RoleOption {
 const ROLES: RoleOption[] = [
   {
     role: 'CUSTOMER',
-    name: 'Alex Morgan',
+    name: 'Customer Account',
     id: 'CUS-001',
     email: 'alex@example.com',
     label: 'Customer Portal',
@@ -26,7 +26,7 @@ const ROLES: RoleOption[] = [
   },
   {
     role: 'OWNER',
-    name: 'Elena Vance',
+    name: 'Store Operations',
     id: 'OWN-001',
     email: 'owner@parcelproof.com',
     label: 'Owner Operations',
@@ -35,7 +35,7 @@ const ROLES: RoleOption[] = [
   },
   {
     role: 'DELIVERY_AGENT',
-    name: 'Daniel Kumar',
+    name: 'Courier Agent',
     id: 'DEL-AGENT-001',
     email: 'courier@parcelproof.com',
     label: 'Delivery Courier',
@@ -53,7 +53,7 @@ const ROLES: RoleOption[] = [
   },
   {
     role: 'ADMIN',
-    name: 'Sarah Connor',
+    name: 'Platform Admin',
     id: 'ADM-001',
     email: 'admin@parcelproof.com',
     label: 'Admin Console',

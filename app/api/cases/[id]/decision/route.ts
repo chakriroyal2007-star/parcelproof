@@ -23,7 +23,7 @@ export async function POST(req: Request, ctx: Context) {
 
     const id = (await ctx.params).id;
     const body = decisionSchema.parse(await req.json());
-    const ownerName = user?.name || 'Elena Vance';
+    const ownerName = user?.name || 'Operations Owner';
 
     const decision = recordOwnerDecision(
       id,

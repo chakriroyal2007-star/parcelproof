@@ -20,8 +20,8 @@ export async function POST(req: Request, ctx: Context) {
     const id = (await ctx.params).id;
     const body = statusSchema.parse(await req.json());
 
-    const agentId = user?.agentId || 'DEL-AGT-01';
-    const agentName = user?.name || 'Daniel Kumar';
+    const agentId = user?.agentId || user?.id || 'COURIER';
+    const agentName = user?.name || 'Assigned Courier';
 
     const order = updateDeliveryStatus(
       id,

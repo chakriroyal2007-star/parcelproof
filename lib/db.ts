@@ -1591,7 +1591,7 @@ export function getUserByEmailInDb(email: string): (User & { passwordHash?: stri
   const row = c.prepare('SELECT * FROM users WHERE email=?').get(normalizedEmail) as any;
   if (!row) {
     const fixture = USERS_FIXTURE.find(u => u.email.toLowerCase() === normalizedEmail);
-    if (fixture) return fixture;
+    if (process.env.PARCELPROOF_TEST === '1' && fixture) return fixture;
     return null;
   }
   return {
@@ -1608,7 +1608,7 @@ export function getUserByEmailInDb(email: string): (User & { passwordHash?: stri
 export function listUsersInDb(): User[] {
   const c = db();
   const rows = c.prepare('SELECT id, email, name, role, accountId, agentId FROM users').all() as any[];
-  if (rows.length === 0) {
+  if (rows.length === 0 && process.env.PARCELPROOF_TEST === '1') {
     return USERS_FIXTURE.map(({ passwordHash, ...u }) => u);
   }
   return rows.map(r => ({
@@ -1619,4 +1619,17 @@ export function listUsersInDb(): User[] {
     accountId: r.accountId || null,
     agentId: r.agentId || null
   }));
+}
+
+
+export function resetDatabase() {
+  const c = db();
+  for (const table of ["owner_decisions","refund_assessment_history","refund_assessments","delivery_events","ai_audits","next_agent_briefs","ai_conversations","commitments","case_memories","audits","sessions","drafts","handoffs","analyses","chunks","refunds","orders","users"]) {
+    try {
+      c.exec(`DELETE FROM ${table}`);
+    } catch {}
+  }
+  try {
+    c.exec(`DELETE FROM sources WHERE type != 'policy'`);
+  } catch {}
 }

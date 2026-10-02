@@ -8,7 +8,8 @@ export const dynamic = 'force-dynamic';
 type Context = { params: Promise<{ id: string }> };
 
 const assignSchema = z.object({
-  deliveryAgentId: z.string(),
+  deliveryAgentId: z.string().optional(),
+  agentId: z.string().optional(),
   assignedBy: z.string().optional()
 });
 
@@ -23,7 +24,8 @@ export async function POST(req: Request, ctx: Context) {
     const body = assignSchema.parse(await req.json());
     const assignedBy = body.assignedBy || user?.name || 'Operations Owner';
 
-    const order = assignDeliveryAgent(id, body.deliveryAgentId, assignedBy);
+    const agentId = body.deliveryAgentId || body.agentId || '';
+    const order = assignDeliveryAgent(id, agentId, assignedBy);
 
     return Response.json({ success: true, order });
   } catch (e) {
